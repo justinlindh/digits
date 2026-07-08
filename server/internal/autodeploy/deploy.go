@@ -26,36 +26,36 @@ const (
 	ActionCritical       Action = "critical"
 )
 
-// Step identifies which phase of a deploy attempt produced an error.
+// step identifies which phase of a deploy attempt produced an error.
 // Stored alongside emails so debounce keys on the structural step, not on
 // a fragile substring of an error message.
-type Step string
+type step string
 
 const (
-	StepLogin       Step = "login"
-	StepPull        Step = "pull"
-	StepUp          Step = "up"
-	StepHealthcheck Step = "healthcheck"
+	stepLogin       step = "login"
+	stepPull        step = "pull"
+	stepUp          step = "up"
+	stepHealthcheck step = "healthcheck"
 )
 
 // needsRevert reports whether a failure at this step left the new container
 // running and therefore warrants reverting to the previous version.
 // Login and pull happen before any container churn.
-func (s Step) needsRevert() bool {
-	return s == StepUp || s == StepHealthcheck
+func (s step) needsRevert() bool {
+	return s == stepUp || s == stepHealthcheck
 }
 
 // stepError tags an error with the deploy phase it came from. Returned by
 // deployVersion and unwrapped by Run to drive revert and email-class logic.
 type stepError struct {
-	Step Step
+	Step step
 	Err  error
 }
 
 func (e *stepError) Error() string { return string(e.Step) + ": " + e.Err.Error() }
 func (e *stepError) Unwrap() error { return e.Err }
 
-func stepOf(err error) Step {
+func stepOf(err error) step {
 	if se, ok := errors.AsType[*stepError](err); ok {
 		return se.Step
 	}
@@ -217,7 +217,7 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 			Args:  []string{"login", "ghcr.io", "-u", d.Cfg.GHCRUsername, "--password-stdin"},
 			Stdin: []byte(d.Cfg.GHCRToken),
 		}); err != nil {
-			return &stepError{Step: StepLogin, Err: err}
+			return &stepError{Step: stepLogin, Err: err}
 		}
 	}
 
@@ -232,21 +232,21 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 	if err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: pullArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {
-		return &stepError{Step: StepPull, Err: err}
+		return &stepError{Step: stepPull, Err: err}
 	}
 
 	upArgs := slices.Concat(composeArgs, []string{"up", "-d", "--wait"}, d.Cfg.Services)
 	if err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: upArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {
-		return &stepError{Step: StepUp, Err: err}
+		return &stepError{Step: stepUp, Err: err}
 	}
 
 	hctx, cancel := context.WithTimeout(ctx, healthTimeout)
 	defer cancel()
 	for _, u := range d.Cfg.HealthURLs {
 		if err := d.Health(hctx, u, version, 2*time.Second); err != nil {
-			return &stepError{Step: StepHealthcheck, Err: err}
+			return &stepError{Step: stepHealthcheck, Err: err}
 		}
 	}
 	return nil
