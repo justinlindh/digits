@@ -643,6 +643,19 @@ func (c *Controller) onKey(digit string) {
 	}
 }
 
+// isSelfCall reports whether number is this line's own number. Dialing it is
+// rejected on both dial paths (busy on the first leg, intercept on an add).
+func (c *Controller) isSelfCall(number string) bool {
+	return c.ownNumber != "" && number == c.ownNumber
+}
+
+// isBlockedContact reports whether a contact filter is configured and rejects
+// number. Both dial paths consult it to refuse numbers outside the allowed
+// contact list; only their local treatment of the rejection differs.
+func (c *Controller) isBlockedContact(number string) bool {
+	return c.contactChecker != nil && !c.contactChecker(number)
+}
+
 func (c *Controller) onDial(number string) {
 	if c.state == StateADD_DIALING {
 		c.dialThirdParty(number)
@@ -655,16 +668,16 @@ func (c *Controller) onDial(number string) {
 
 	// Self-call: dialing your own number gets an immediate busy tone,
 	// just like a real POTS line.
-	if c.ownNumber != "" && number == c.ownNumber {
+	if c.isSelfCall(number) {
 		slog.Info("phone: self-call detected, busy tone")
 		c.state = StateCALLING
 		c.cb.SendTone(ToneBusy)
 		return
 	}
 
-	// Contact filter: if checker is set and number is not a contact,
-	// play rejection sequence (mimics unreachable number) instead of calling.
-	if c.contactChecker != nil && !c.contactChecker(number) {
+	// Contact filter: if number is not a contact, play rejection sequence
+	// (mimics unreachable number) instead of calling.
+	if c.isBlockedContact(number) {
 		slog.Info("phone: number not in contacts, rejecting", "number", number)
 		c.state = StateCALLING
 		c.cb.SendTone(ToneRingback)
@@ -739,11 +752,11 @@ func (c *Controller) playRejectSequence() {
 }
 
 // dialThirdParty initiates an outgoing call to C from ADD_DIALING state.
-// Mirrors the final steps of onDial for the 2-party flow, including the same
-// self-call and contact-filter guards.
+// Mirrors the final steps of onDial for the 2-party flow, sharing the same
+// self-call and contact-filter guards but treating a rejection as an intercept.
 func (c *Controller) dialThirdParty(number string) {
 	// Self-call guard: dialing own number is immediately rejected.
-	if c.ownNumber != "" && number == c.ownNumber {
+	if c.isSelfCall(number) {
 		slog.Info("phone: dialThirdParty self-call detected, intercept")
 		c.state = StateADD_INTERCEPT
 		c.cb.SendTone(ToneIntercept)
@@ -751,7 +764,7 @@ func (c *Controller) dialThirdParty(number string) {
 	}
 
 	// Contact filter: reject if number is not in the allowed contact list.
-	if c.contactChecker != nil && !c.contactChecker(number) {
+	if c.isBlockedContact(number) {
 		slog.Info("phone: dialThirdParty number not in contacts, rejecting", "number", number)
 		c.state = StateADD_INTERCEPT
 		c.cb.SendTone(ToneIntercept)
