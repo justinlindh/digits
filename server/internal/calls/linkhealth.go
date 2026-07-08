@@ -75,7 +75,8 @@ type endpointKey struct {
 
 // RingCapacity is the per-endpoint in-memory sample retention.
 // At the default 2s reporting cadence this holds 2 minutes of history.
-// Readback and ReadbackEdge callers use this constant for the limit argument.
+// Readback and ReadbackEdge cap their DB result at this many samples so a
+// readback returns no more history than the in-memory ring would have held.
 const RingCapacity = 60
 
 // sessionRings holds per-endpoint bounded sample rings and last-flushed
@@ -669,47 +670,41 @@ func (s *HealthStore) sweepIdleSessions() {
 	}
 }
 
-// Readback returns the last `limit` samples for a 2-party call+endpoint from
-// the DB, oldest first. Used when in-memory state is empty (ended call,
+// Readback returns the last RingCapacity samples for a 2-party call+endpoint
+// from the DB, oldest first. Used when in-memory state is empty (ended call,
 // post-restart).
-func (s *HealthStore) Readback(ctx context.Context, callID int64, endpoint string, limit int) ([]Sample, error) {
+func (s *HealthStore) Readback(ctx context.Context, callID int64, endpoint string) ([]Sample, error) {
 	if s.db == nil {
 		return nil, nil
 	}
 	return s.readbackSession(ctx,
 		`WHERE call_id = $1 AND endpoint = $2`,
 		[]any{callID, endpoint},
-		limit,
 	)
 }
 
-// ReadbackEdge returns the last `limit` samples for a conference edge
+// ReadbackEdge returns the last RingCapacity samples for a conference edge
 // (from -> peer) from the DB, oldest first. Mirrors Readback for the
 // conference path.
-func (s *HealthStore) ReadbackEdge(ctx context.Context, confID uuid.UUID, from, peer string, limit int) ([]Sample, error) {
+func (s *HealthStore) ReadbackEdge(ctx context.Context, confID uuid.UUID, from, peer string) ([]Sample, error) {
 	if s.db == nil {
 		return nil, nil
 	}
 	return s.readbackSession(ctx,
 		`WHERE conference_id = $1 AND endpoint = $2 AND peer = $3`,
 		[]any{confID, from, peer},
-		limit,
 	)
 }
 
 // readbackSession runs a parameterized readback query against call_link_health
 // with a caller-supplied WHERE fragment. `where` must begin with "WHERE " and
-// its placeholders must be numbered $1..$N in order of `args`. Returns samples
-// oldest-first.
-func (s *HealthStore) readbackSession(ctx context.Context, where string, args []any, limit int) ([]Sample, error) {
-	// Compute $N before appending limit so the index is correct; swapping
-	// these two lines would misalign the placeholder.
-	limitPlaceholder := "$" + strconv.Itoa(len(args)+1)
-	args = append(args, limit)
+// its placeholders must be numbered $1..$N in order of `args`. Returns the last
+// RingCapacity samples, oldest-first.
+func (s *HealthStore) readbackSession(ctx context.Context, where string, args []any) ([]Sample, error) {
 	sqlStr := `SELECT ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out
 		 FROM call_link_health ` + where + `
 		 ORDER BY ts DESC
-		 LIMIT ` + limitPlaceholder
+		 LIMIT ` + strconv.Itoa(RingCapacity)
 
 	rows, err := s.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {

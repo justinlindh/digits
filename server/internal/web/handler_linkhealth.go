@@ -141,7 +141,7 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 	out.DisplayName = nr.display(number)
 
 	window, latest, err := resolveWindow(h.healthStore.Window(callID, number), func() ([]calls.Sample, error) {
-		return h.healthStore.Readback(ctx, callID, number, calls.RingCapacity)
+		return h.healthStore.Readback(ctx, callID, number)
 	})
 	if err != nil {
 		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)

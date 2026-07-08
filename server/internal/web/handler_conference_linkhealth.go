@@ -98,7 +98,7 @@ func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid
 	out := ConferenceLinkHealthEdge{From: from, Peer: peer, Window: []LinkHealthSample{}}
 
 	window, latest, err := resolveWindow(h.healthStore.WindowEdge(confID, from, peer), func() ([]calls.Sample, error) {
-		return h.healthStore.ReadbackEdge(ctx, confID, from, peer, calls.RingCapacity)
+		return h.healthStore.ReadbackEdge(ctx, confID, from, peer)
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "ReadbackEdge failed; serving empty window",
