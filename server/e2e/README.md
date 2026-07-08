@@ -62,14 +62,13 @@ will skip themselves gracefully. Public-page tests (login page, healthz) still r
 tests/
   helpers.ts              # Shared utilities (isServerUp, requireServer, etc.)
   auth.setup.ts           # Playwright setup: establishes authenticated session
-  01-login.spec.ts        # Login page (public, no auth needed)
-  02-dashboard.spec.ts    # Dashboard golden path
-  03-onboarding.spec.ts   # New-user household creation
-  04-phones.spec.ts       # Phone pairing and management
-  05-settings.spec.ts     # Settings page
-  06-links.spec.ts        # Household links / invite codes
-  07-navigation.spec.ts   # Cross-page navigation smoke tests
+  NN-<feature>.spec.ts    # One spec per feature area, numbered by rough order
 ```
+
+Specs are named `NN-<feature>.spec.ts`, one per feature area (login, dashboard,
+onboarding, phones, settings, links, navigation, theme, silent mode, live
+calls, do-not-disturb, firmware changelog, voicemail, conference). Run `ls
+tests/` for the current set rather than maintaining a list here.
 
 ## Skipping behaviour
 
