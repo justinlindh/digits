@@ -51,7 +51,14 @@ func NewClient(url, number, hardwareID, deviceToken string) *Client {
 // the readPump goroutine. On failure, the done channel is closed so that
 // callers selecting on Done() can detect the failure and retry.
 func (c *Client) Connect() error {
-	conn, _, err := websocket.DefaultDialer.Dial(c.url, http.Header{})
+	conn, resp, err := websocket.DefaultDialer.Dial(c.url, http.Header{})
+	// Dial returns a non-nil response on both a successful upgrade and a
+	// handshake failure. Its body holds the HTTP upgrade response and must be
+	// closed on every path, otherwise this long-running daemon leaks a
+	// connection/FD on each reconnect attempt.
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		close(c.done)
 		return fmt.Errorf("signal: dial %s: %w", c.url, err)

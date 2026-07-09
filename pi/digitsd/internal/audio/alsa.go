@@ -165,6 +165,7 @@ func ExtractChannel(interleaved []int16, totalChannels, ch int) []int16 {
 // configureHWParams sets up ALSA hw params on the given PCM handle.
 func configureHWParams(handle *C.snd_pcm_t, cfg Config) error {
 	var params *C.snd_pcm_hw_params_t
+	//nolint:gocritic // dupSubExpr false positive: the flagged "0 == 0" is cgo's _cgoCheckPointer wrapper, auto-generated for the &params argument.
 	C.snd_pcm_hw_params_malloc(&params)
 	defer C.snd_pcm_hw_params_free(params)
 
@@ -218,6 +219,7 @@ func NewCapture(cfg Config) (*Capture, error) {
 	defer C.free(unsafe.Pointer(cdev))
 
 	var handle *C.snd_pcm_t
+	//nolint:gocritic // dupSubExpr false positive: the flagged "0 == 0" is cgo's _cgoCheckPointer wrapper, auto-generated for the &handle argument.
 	rc := C.snd_pcm_open(&handle, cdev, C.SND_PCM_STREAM_CAPTURE, 0)
 	if rc < 0 {
 		return nil, fmt.Errorf("snd_pcm_open capture %q: %s", cfg.Device, C.GoString(C.snd_strerror(rc)))
@@ -271,6 +273,7 @@ func NewPlayback(cfg Config) (*Playback, error) {
 	defer C.free(unsafe.Pointer(cdev))
 
 	var handle *C.snd_pcm_t
+	//nolint:gocritic // dupSubExpr false positive: the flagged "0 == 0" is cgo's _cgoCheckPointer wrapper, auto-generated for the &handle argument.
 	rc := C.snd_pcm_open(&handle, cdev, C.SND_PCM_STREAM_PLAYBACK, 0)
 	if rc < 0 {
 		return nil, fmt.Errorf("snd_pcm_open playback %q: %s", cfg.Device, C.GoString(C.snd_strerror(rc)))
