@@ -126,3 +126,11 @@ info "Starting image build (privileged container)..."
 docker run "${DOCKER_ARGS[@]}" digits-image-builder "${ENTRYPOINT_ARGS[@]}"
 
 info "Done! Output image is in the current directory."
+
+# Retention: keep only the newest IMAGE_KEEP images per variant so build
+# outputs don't silently pile up multi-GB files in the repo root. This runs
+# only after a successful build (set -e aborts the script before here on
+# failure) and host-side as the invoking user, so it never needs sudo. A
+# pruning hiccup must not mark an otherwise-successful build as failed.
+"${SCRIPT_DIR}/../../tools/prune-images.sh" "$REPO_DIR" \
+    || warn "Image pruning failed; existing outputs left in place."
