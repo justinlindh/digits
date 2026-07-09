@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="{{static "answering-machine.css"}}">
 <script src="{{static "htmx.min.js"}}"></script>
 <script src="{{static "sse.min.js"}}"></script>
+<script src="{{static "digits.js"}}" defer></script>
 </head>
 <body class="am">
 
@@ -71,20 +72,6 @@
 {{end}}
 
 {{template "confirm-dialog" .}}
-
-{{if ne .Page "login"}}
-<script>
-(function () {
-  var toggle = document.getElementById('am-nav-toggle');
-  var drawer = document.getElementById('am-nav-drawer');
-  if (!toggle || !drawer) return;
-  toggle.addEventListener('click', function () {
-    var open = drawer.classList.toggle('is-open');
-    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-})();
-</script>
-{{end}}
 
 </body>
 </html>

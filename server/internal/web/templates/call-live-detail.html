@@ -22,7 +22,7 @@
         {{if .ForceEndedBy}}Ended by {{.ForceEndedBy}}{{else}}Ended{{end}}
       </div>
     {{else}}
-      <button class="deck-kill" type="button" onclick="document.getElementById('deck-confirm').showModal()">
+      <button class="deck-kill" type="button" data-dialog-open="deck-confirm">
         {{if eq .User.Theme "answering-machine"}}&#9632; Stop{{else if eq .User.Theme "dialup"}}◉ Disconnect{{else}}End call{{end}}
       </button>
     {{end}}
@@ -59,11 +59,11 @@
           The server does not touch audio: only the signaling channel.
         </p>
         <div class="deck-confirm__actions">
-          <button type="button" class="deck-confirm__cancel" onclick="document.getElementById('deck-confirm').close()">Cancel</button>
+          <button type="button" class="deck-confirm__cancel" data-dialog-close>Cancel</button>
           <button type="button" class="deck-confirm__go"
                   hx-post="/api/call/{{.Call.ID}}/disconnect"
                   hx-swap="none"
-                  onclick="document.getElementById('deck-confirm').close()">
+                  data-dialog-close>
             {{if eq .User.Theme "answering-machine"}}&#9632; Stop{{else if eq .User.Theme "dialup"}}Disconnect{{else}}End call{{end}}
           </button>
         </div>
@@ -76,53 +76,5 @@
   </p>
 </div>
 
-<script>
-  (function () {
-    var el = document.querySelector('.deck-duration');
-    if (!el) return;
-    var since = parseInt(el.getAttribute('data-duration-since'), 10);
-    if (!since) return;
-    function tick() {
-      if (!document.body.contains(el)) return;
-      var now = Date.now();
-      var s = Math.max(0, Math.floor((now - since) / 1000));
-      var h = Math.floor(s / 3600);
-      var m = Math.floor((s % 3600) / 60);
-      var sec = s % 60;
-      function pad(n) { return n < 10 ? '0' + n : String(n); }
-      el.textContent = (h > 0 ? h + ':' : '') + pad(m) + ':' + pad(sec);
-    }
-    tick();
-    var iv = setInterval(tick, 1000);
-
-    var lastEvent = Date.now();
-    var panel = document.getElementById('call-live-panel');
-    if (panel) {
-      panel.addEventListener('htmx:sseMessage', function () { lastEvent = Date.now(); });
-      setInterval(function () {
-        if (Date.now() - lastEvent > 30000) {
-          var banner = document.getElementById('deck-stale-banner');
-          if (!banner) {
-            banner = document.createElement('div');
-            banner.id = 'deck-stale-banner';
-            banner.className = 'deck-stale';
-            banner.innerHTML = 'Connection lost. <button onclick="location.reload()">Refresh</button>';
-            document.querySelector('.deck').prepend(banner);
-          }
-        }
-      }, 5000);
-    }
-
-    document.body.addEventListener('htmx:sseMessage', function (ev) {
-      if (ev.detail && (ev.detail.type === 'ended' || ev.detail.type === 'disconnect')) {
-        clearInterval(iv);
-        // Refresh after a short delay so the server re-renders the page
-        // in postmortem mode (End-call button hidden, CONNECTED indicator
-        // gone, terminal chip in the header). The inline swap handles the
-        // panel; the reload handles the header and theme chrome.
-        setTimeout(function () { location.reload(); }, 800);
-      }
-    });
-  })();
-</script>
+<script src="{{static "deck-live.js"}}" defer></script>
 {{end}}

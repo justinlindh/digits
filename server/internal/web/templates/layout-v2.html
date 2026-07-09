@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="{{static "digits.css"}}">
 <script src="{{static "htmx.min.js"}}"></script>
 <script src="{{static "sse.min.js"}}"></script>
+<script src="{{static "digits.js"}}" defer></script>
 </head>
 <body>
 
@@ -38,7 +39,7 @@
     <span id="dnd-indicator">{{template "dnd-indicator-content" .}}</span>
   </div>
 
-  <button class="rail__toggle" type="button" aria-label="Open navigation" onclick="document.querySelector('.rail__nav').classList.toggle('is-open')">Menu</button>
+  <button class="rail__toggle" type="button" aria-label="Open navigation">Menu</button>
 
   <nav class="rail__nav" aria-label="Primary">
     <a href="/"         class="{{if .OverviewActive}}is-active{{end}}">Overview</a>
