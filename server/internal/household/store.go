@@ -39,9 +39,9 @@ type Store struct {
 	// case of an established user. It is a positive-only, monotonic cache: an
 	// entry means "has a household" (a state that only flips once per user, on
 	// their first create/join), so a stale entry can never re-gate a genuinely
-	// new user. Membership removal evicts the entry on this replica; in a
-	// multi-replica deployment a peer's cache re-populates from the DB on its
-	// next miss. See NeedsOnboarding.
+	// new user. Membership removal and household deletion evict the affected
+	// entries on this replica; in a multi-replica deployment a peer's cache
+	// re-populates from the DB on its next miss. See NeedsOnboarding.
 	hasHousehold sync.Map // map[string]struct{}, keyed by user ID
 }
 
@@ -341,18 +341,53 @@ func (s *Store) SetCallHistoryEnabled(ctx context.Context, householdID string, e
 }
 
 // Delete removes a household and all its associated records (members, invites,
-// links, lines, and devices) via CASCADE foreign keys.
+// links, lines, and devices) via CASCADE foreign keys. Members are deleted
+// explicitly first so their user IDs can be evicted from the onboarding cache;
+// a member who was left with no other household is then correctly re-gated on
+// this replica.
 func (s *Store) Delete(ctx context.Context, householdID string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM households WHERE id = $1`, householdID)
-	if err != nil {
-		return fmt.Errorf("delete household: %w", err)
+	var memberIDs []string
+	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx,
+			`DELETE FROM household_members WHERE household_id = $1 RETURNING user_id`,
+			householdID,
+		)
+		if err != nil {
+			return fmt.Errorf("delete household members: %w", err)
+		}
+		for rows.Next() {
+			var userID string
+			if err := rows.Scan(&userID); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("scan member user id: %w", err)
+			}
+			memberIDs = append(memberIDs, userID)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("delete household members: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("delete household members: %w", err)
+		}
+
+		res, err := tx.ExecContext(ctx, `DELETE FROM households WHERE id = $1`, householdID)
+		if err != nil {
+			return fmt.Errorf("delete household: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("delete household: %w", err)
+		}
+		if n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("delete household: %w", err)
-	}
-	if n == 0 {
-		return ErrNotFound
+	for _, userID := range memberIDs {
+		s.forgetHousehold(userID)
 	}
 	return nil
 }

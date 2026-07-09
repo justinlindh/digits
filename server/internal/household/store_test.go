@@ -387,6 +387,50 @@ func TestStore_Delete_NotFound(t *testing.T) {
 	}
 }
 
+// TestStore_Delete_EvictsOnboardingCache verifies that deleting a household
+// evicts every member from the positive-only onboarding cache on the same
+// replica, so a member left with no household is re-gated rather than sailing
+// past onboarding on a stale cached "has a household" fact.
+func TestStore_Delete_EvictsOnboardingCache(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+	ownerID := createTestUser(t, database, "delete-cache-owner@example.com")
+	memberID := createTestUser(t, database, "delete-cache-member@example.com")
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec(`DELETE FROM users WHERE id IN ($1, $2)`, ownerID, memberID)
+	})
+
+	h, err := s.Create(ctx, "Delete Cache Family", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := s.AddMember(ctx, memberID, h.ID, "member"); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	// Create and AddMember cache both users as "has a household", so neither
+	// needs onboarding while the household exists.
+	if s.NeedsOnboarding(ctx, ownerID) {
+		t.Fatal("owner should not need onboarding before delete")
+	}
+	if s.NeedsOnboarding(ctx, memberID) {
+		t.Fatal("member should not need onboarding before delete")
+	}
+
+	if err := s.Delete(ctx, h.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// After deletion both users have no household, and the eviction means the
+	// same store re-reads the DB and re-gates them (a stale cache would not).
+	if !s.NeedsOnboarding(ctx, ownerID) {
+		t.Error("owner should be re-gated after their only household is deleted")
+	}
+	if !s.NeedsOnboarding(ctx, memberID) {
+		t.Error("member should be re-gated after their only household is deleted")
+	}
+}
+
 func TestGetMembersWithUsers(t *testing.T) {
 	s, database := testStore(t)
 	ctx := context.Background()

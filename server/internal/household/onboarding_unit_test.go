@@ -103,6 +103,33 @@ func TestNeedsOnboarding_ForgetHouseholdReArms(t *testing.T) {
 	}
 }
 
+func TestNeedsOnboarding_ForgetHouseholdEvictsEachMember(t *testing.T) {
+	s := &Store{}
+	members := []string{"alice", "bob", "carol"}
+
+	// A shared household caches every member as "has a household".
+	for _, id := range members {
+		s.markHasHousehold(id)
+	}
+	for _, id := range members {
+		if _, cached := s.hasHousehold.Load(id); !cached {
+			t.Fatalf("%s should be cached after markHasHousehold", id)
+		}
+	}
+
+	// Deleting the household evicts each member (Delete loops forgetHousehold
+	// over the deleted rows); every entry must be gone so no member sails past
+	// onboarding on a stale positive.
+	for _, id := range members {
+		s.forgetHousehold(id)
+	}
+	for _, id := range members {
+		if _, cached := s.hasHousehold.Load(id); cached {
+			t.Errorf("%s should be evicted after forgetHousehold", id)
+		}
+	}
+}
+
 func TestNeedsOnboarding_QueryErrorDoesNotGate(t *testing.T) {
 	s := &Store{}
 	stub := &countStub{err: errors.New("db down")}

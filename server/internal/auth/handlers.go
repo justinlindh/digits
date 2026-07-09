@@ -125,6 +125,7 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 
 	user, _, err := h.store.GetOrCreateUserByEmail(r.Context(), emailAddr)
 	if err != nil {
+		h.observeLogin("magic_link", "failure")
 		slog.ErrorContext(r.Context(), "magic link verify: get or create user", "err", err)
 		http.Error(w, "failed to look up user", http.StatusInternalServerError)
 		return
@@ -136,6 +137,7 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 
 	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
+		h.observeLogin("magic_link", "failure")
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}

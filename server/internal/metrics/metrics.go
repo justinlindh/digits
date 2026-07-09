@@ -165,7 +165,7 @@ func New(version, commit string) *Registry {
 			Namespace: "digits",
 			Subsystem: serviceName,
 			Name:      "auth_magic_links_total",
-			Help:      "Magic-link lifecycle events, partitioned by event (issued when a link is created and emailed, consumed when a valid link mints a session). A large issued-minus-consumed gap points at email delivery problems. No email or token is recorded.",
+			Help:      "Magic-link lifecycle events, partitioned by event (issued when a link is created, before the email send is attempted, consumed when a valid link mints a session). A large issued-minus-consumed gap points at email delivery problems. No email or token is recorded.",
 		},
 		[]string{"event"},
 	)
