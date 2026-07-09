@@ -7,7 +7,12 @@ signald:
     tag: ""  # defaults to appVersion
     pullPolicy: IfNotPresent
   replicas: 1
-  resources: {}
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 512Mi
   env: {}
   envFrom: []
   # Container port for the HTTP/WebSocket listener.
