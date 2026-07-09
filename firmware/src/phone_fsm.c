@@ -14,6 +14,7 @@
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
+#include "led_phase.h"
 #include "phase.h"
 #include "ringer.h"
 #include "uart_proto.h"
@@ -27,12 +28,8 @@ static void fsm_led_set(led_mode_t mode) {
         return;
     }
     if (mode == LED_MODE_OFF) {
-        switch (phase_read()) {
-        case PHASE_UNPAIRED: led_set_mode(LED_MODE_SLOW_PULSE); return;
-        case PHASE_SETUP:    led_set_mode(LED_MODE_DOUBLE_PULSE); return;
-        case PHASE_RECOVERY: led_set_mode(LED_MODE_FAST_BLINK); return;
-        default: break;
-        }
+        led_set_mode(phase_idle_led_mode(phase_read()));
+        return;
     }
     led_set_mode(mode);
 }
@@ -297,6 +294,13 @@ static void process_pi_command(const char *cmd) {
         uart_proto_send("REBOOT:OK");
         // Give the UART TX FIFO time to flush before we kill the CPU.
         sleep_ms(50);
+        // Disable the hardware watchdog armed in main() before dropping into
+        // bootrom. The BOOTSEL window must outlive the 1s watchdog: if the
+        // watchdog stayed live it could reset the chip back into firmware
+        // roughly 1s into BOOTSEL, before a slow openocd/SWD attach lands,
+        // breaking headless OTA. Do not bet on bootrom clearing it; make it
+        // deterministic here.
+        watchdog_disable();
         // disable_interface_mask = 0 (enable both UF2 and PICOBOOT),
         // usb_activity_gpio_pin_mask = 0 (no LED indicator).
         reset_usb_boot(0, 0);

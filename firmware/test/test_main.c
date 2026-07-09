@@ -13,6 +13,7 @@ const test_case_t *hook_tests(int *count);
 const test_case_t *keypad_tests(int *count);
 const test_case_t *uart_tests(int *count);
 const test_case_t *fsm_tests(int *count);
+const test_case_t *phase_sync_tests(int *count);
 
 typedef const test_case_t *(*suite_fn_t)(int *count);
 
@@ -26,6 +27,7 @@ static const suite_t k_suites[] = {
     {"keypad", keypad_tests},
     {"uart_proto", uart_tests},
     {"phone_fsm", fsm_tests},
+    {"phase_sync", phase_sync_tests},
 };
 
 int main(void) {

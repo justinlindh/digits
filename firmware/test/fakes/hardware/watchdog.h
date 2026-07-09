@@ -12,4 +12,7 @@ static inline void watchdog_enable(uint32_t delay_ms, bool pause_on_debug) {
     (void)pause_on_debug;
 }
 
+static inline void watchdog_disable(void) {
+}
+
 #endif  // DIGITS_TEST_HARDWARE_WATCHDOG_H
