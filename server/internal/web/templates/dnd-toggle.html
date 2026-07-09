@@ -17,15 +17,12 @@
 {{end}}
 {{end}}
 
-{{/* htmx response wrappers: toggle partial + OOB swap for the navbar
-     indicator so both update in a single response. */}}
+{{/* htmx response wrapper: toggle partial + OOB swap for the navbar
+     indicator so both update in a single response. The wrapper is identical
+     across themes apart from which toggle widget it embeds, so it branches
+     internally rather than duplicating the wrapper per theme. */}}
 {{define "dnd-response"}}
-{{template "dnd-toggle" .}}
-<span id="dnd-indicator" hx-swap-oob="true">{{template "dnd-indicator-content" .}}</span>
-{{end}}
-
-{{define "dnd-response-am"}}
-{{template "dnd-toggle-am" .}}
+{{if and .User (eq .User.Theme "answering-machine")}}{{template "dnd-toggle-am" .}}{{else}}{{template "dnd-toggle" .}}{{end}}
 <span id="dnd-indicator" hx-swap-oob="true">{{template "dnd-indicator-content" .}}</span>
 {{end}}
 
