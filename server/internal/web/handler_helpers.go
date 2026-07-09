@@ -27,24 +27,28 @@ import (
 // responses are intentionally indistinguishable to avoid leaking whether a
 // given number exists.
 func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
-	ln, _ := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln, _, _ := h.requireLineOwnershipWithHousehold(w, r, number)
 	return ln
 }
 
 // requireLineOwnershipAdmin is requireLineOwnership with an additional admin
 // role check. Used for destructive phone endpoints (delete, factory reset,
-// restart, update, pair, add line).
+// restart, update, pair, add line). It reuses the role resolved by the
+// ownership lookup, so no extra role query is issued.
 func (h *Handler) requireLineOwnershipAdmin(w http.ResponseWriter, r *http.Request, number string) *line.Line {
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln, _, role := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return nil
 	}
-	if !h.isHouseholdAdmin(r, hh.ID) {
+	if role != roleAdmin {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return nil
 	}
 	return ln
 }
+
+// roleAdmin is the household_members.role value that grants admin rights.
+const roleAdmin = "admin"
 
 // isHouseholdAdmin reports whether the request's user is an admin of the given
 // household. Best-effort: returns false on any lookup error or missing user.
@@ -56,40 +60,53 @@ func (h *Handler) isHouseholdAdmin(r *http.Request, householdID string) bool {
 		return false
 	}
 	role, err := h.householdStore.GetRole(r.Context(), user.ID, householdID)
-	return err == nil && role == "admin"
+	return err == nil && role == roleAdmin
 }
 
 // requireLineOwnershipWithHousehold is requireLineOwnership plus the matched
-// household value, for callers that need the household state (e.g., DND)
-// without an extra DB round-trip. On any failure it writes 404 and returns
-// (nil, nil); the auth/lookup behavior is identical to requireLineOwnership.
-func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *http.Request, number string) (*line.Line, *household.Household) {
+// household and the caller's role in it, for callers that need the household
+// state (e.g., DND) or the role (admin gating) without an extra DB round-trip.
+// On any failure it writes 404 and returns (nil, nil, ""); the auth/lookup
+// behavior is identical to requireLineOwnership.
+func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *http.Request, number string) (*line.Line, *household.Household, string) {
 	ln, err := h.lineStore.GetByNumber(r.Context(), number)
 	if err != nil {
 		http.NotFound(w, r)
-		return nil, nil
+		return nil, nil, ""
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		http.NotFound(w, r)
-		return nil, nil
+		return nil, nil, ""
 	}
 	if h.householdStore == nil {
 		http.NotFound(w, r)
-		return nil, nil
+		return nil, nil, ""
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	memberships, err := h.householdStore.GetForUserWithRoles(r.Context(), user.ID)
+	if err != nil || len(memberships) == 0 {
 		http.NotFound(w, r)
-		return nil, nil
+		return nil, nil, ""
 	}
-	for _, hh := range households {
-		if hh.ID == ln.HouseholdID {
-			return ln, hh
-		}
+	if hh, role, ok := matchMembership(memberships, ln.HouseholdID); ok {
+		return ln, hh, role
 	}
 	http.NotFound(w, r)
-	return nil, nil
+	return nil, nil, ""
+}
+
+// matchMembership finds the membership whose household matches householdID and
+// returns the household and the user's role in it. It is the single-query
+// replacement for a separate ownership check plus GetRole lookup: the caller
+// already holds the user's full membership set, so ownership and role resolve
+// together without a second round-trip.
+func matchMembership(memberships []household.Membership, householdID string) (*household.Household, string, bool) {
+	for _, m := range memberships {
+		if m.Household != nil && m.Household.ID == householdID {
+			return m.Household, m.Role, true
+		}
+	}
+	return nil, "", false
 }
 
 // ownedLinesForUser returns the lines owned by any household the user belongs

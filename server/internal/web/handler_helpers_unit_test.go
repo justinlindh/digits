@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 )
 
@@ -92,4 +93,45 @@ func TestWSRateLimit(t *testing.T) {
 	if got := wsRateLimit(HandlerConfig{WSRateLimitPerMin: 120}); got != 120 {
 		t.Errorf("wsRateLimit(120) = %d, want 120", got)
 	}
+}
+
+func TestMatchMembership(t *testing.T) {
+	memberships := []household.Membership{
+		{Household: &household.Household{ID: "hh-a"}, Role: "member"},
+		{Household: &household.Household{ID: "hh-b"}, Role: "admin"},
+		{Household: nil, Role: "admin"}, // defensive: a nil household never matches
+	}
+
+	t.Run("admin household resolves household and role in one pass", func(t *testing.T) {
+		hh, role, ok := matchMembership(memberships, "hh-b")
+		if !ok {
+			t.Fatal("expected hh-b to match")
+		}
+		if hh == nil || hh.ID != "hh-b" {
+			t.Fatalf("wrong household: %+v", hh)
+		}
+		if role != "admin" {
+			t.Fatalf("role = %q, want admin", role)
+		}
+	})
+
+	t.Run("member household returns member role", func(t *testing.T) {
+		_, role, ok := matchMembership(memberships, "hh-a")
+		if !ok || role != "member" {
+			t.Fatalf("hh-a: ok=%v role=%q, want ok=true role=member", ok, role)
+		}
+	})
+
+	t.Run("household the user does not belong to does not match", func(t *testing.T) {
+		hh, role, ok := matchMembership(memberships, "hh-unknown")
+		if ok || hh != nil || role != "" {
+			t.Fatalf("unexpected match: hh=%+v role=%q ok=%v", hh, role, ok)
+		}
+	})
+
+	t.Run("empty membership set does not match", func(t *testing.T) {
+		if _, _, ok := matchMembership(nil, "hh-a"); ok {
+			t.Fatal("nil memberships should not match")
+		}
+	})
 }

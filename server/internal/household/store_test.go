@@ -515,3 +515,81 @@ func TestSetCallHistoryEnabled(t *testing.T) {
 		t.Error("expected call_history_enabled to be true")
 	}
 }
+
+func TestGetForUserWithRoles(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+	userID := createTestUser(t, database, "roles@example.com")
+
+	// The user owns one household (admin) and is a plain member of another.
+	owned, err := s.Create(ctx, "Owned Family", userID)
+	if err != nil {
+		t.Fatalf("Create owned: %v", err)
+	}
+	otherOwner := createTestUser(t, database, "otherowner@example.com")
+	joined, err := s.Create(ctx, "Joined Family", otherOwner)
+	if err != nil {
+		t.Fatalf("Create joined: %v", err)
+	}
+	if err := s.AddMember(ctx, userID, joined.ID, "member"); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	memberships, err := s.GetForUserWithRoles(ctx, userID)
+	if err != nil {
+		t.Fatalf("GetForUserWithRoles: %v", err)
+	}
+	if len(memberships) != 2 {
+		t.Fatalf("expected 2 memberships, got %d", len(memberships))
+	}
+
+	roleByID := map[string]string{}
+	for _, m := range memberships {
+		if m.Household == nil {
+			t.Fatal("membership household is nil")
+		}
+		roleByID[m.Household.ID] = m.Role
+	}
+	if roleByID[owned.ID] != "admin" {
+		t.Errorf("owned household role = %q, want admin", roleByID[owned.ID])
+	}
+	if roleByID[joined.ID] != "member" {
+		t.Errorf("joined household role = %q, want member", roleByID[joined.ID])
+	}
+}
+
+func TestGetForUserWithRoles_Empty(t *testing.T) {
+	s, database := testStore(t)
+	userID := createTestUser(t, database, "noroles@example.com")
+
+	memberships, err := s.GetForUserWithRoles(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("GetForUserWithRoles: %v", err)
+	}
+	if len(memberships) != 0 {
+		t.Errorf("expected 0 memberships, got %d", len(memberships))
+	}
+}
+
+func TestNeedsOnboarding_Integration(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+	userID := createTestUser(t, database, "onboard@example.com")
+
+	if !s.NeedsOnboarding(ctx, userID) {
+		t.Fatal("a brand-new user with no household should need onboarding")
+	}
+
+	if _, err := s.Create(ctx, "Onboard Family", userID); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if s.NeedsOnboarding(ctx, userID) {
+		t.Fatal("after creating a household the user should not need onboarding")
+	}
+
+	// A fresh Store (empty cache) must reach the same answer purely from the DB.
+	fresh := NewStore(database.DB)
+	if fresh.NeedsOnboarding(ctx, userID) {
+		t.Fatal("a fresh store should read the household from the DB, not gate the user")
+	}
+}

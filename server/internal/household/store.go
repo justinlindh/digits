@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
@@ -32,11 +33,35 @@ type Household struct {
 // Store provides household persistence backed by Postgres.
 type Store struct {
 	db *sql.DB
+
+	// hasHousehold caches user IDs known to belong to at least one household,
+	// so the per-request onboarding gate can skip a COUNT query for the common
+	// case of an established user. It is a positive-only, monotonic cache: an
+	// entry means "has a household" (a state that only flips once per user, on
+	// their first create/join), so a stale entry can never re-gate a genuinely
+	// new user. Membership removal evicts the entry on this replica; in a
+	// multi-replica deployment a peer's cache re-populates from the DB on its
+	// next miss. See NeedsOnboarding.
+	hasHousehold sync.Map // map[string]struct{}, keyed by user ID
 }
 
 // NewStore wraps an existing *sql.DB.
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
+}
+
+// markHasHousehold records that the user belongs to a household, so the next
+// NeedsOnboarding call for them resolves from cache without a query.
+func (s *Store) markHasHousehold(userID string) {
+	s.hasHousehold.Store(userID, struct{}{})
+}
+
+// forgetHousehold drops the cached "has a household" fact for a user, forcing
+// the next NeedsOnboarding call to re-read from the database. Called when a
+// membership is removed so a user who left their only household is correctly
+// re-gated on this replica.
+func (s *Store) forgetHousehold(userID string) {
+	s.hasHousehold.Delete(userID)
 }
 
 const householdColumns = `id, name, call_history_enabled, timezone, created_at`
@@ -75,6 +100,7 @@ func (s *Store) Create(ctx context.Context, name, ownerUserID string) (*Househol
 	}); err != nil {
 		return nil, err
 	}
+	s.markHasHousehold(ownerUserID)
 	return h, nil
 }
 
@@ -120,6 +146,42 @@ func (s *Store) GetForUser(ctx context.Context, userID string) ([]*Household, er
 	return households, rows.Err()
 }
 
+// Membership pairs a household with the querying user's role in it.
+type Membership struct {
+	Household *Household
+	Role      string
+}
+
+// GetForUserWithRoles returns every household the user belongs to along with
+// the user's role in each, in a single query. Page handlers that need both the
+// household set and the caller's role (for example to resolve ownership and
+// then gate admin-only UI) use this to avoid a second GetRole round-trip.
+func (s *Store) GetForUserWithRoles(ctx context.Context, userID string) ([]Membership, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT h.id, h.name, h.call_history_enabled, h.timezone, h.created_at, m.role
+		 FROM households h
+		 JOIN household_members m ON m.household_id = h.id
+		 WHERE m.user_id = $1
+		 ORDER BY h.created_at`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get households with roles for user: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var memberships []Membership
+	for rows.Next() {
+		h := &Household{}
+		var role string
+		if err := rows.Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt, &role); err != nil {
+			return nil, fmt.Errorf("scan household with role: %w", err)
+		}
+		memberships = append(memberships, Membership{Household: h, Role: role})
+	}
+	return memberships, rows.Err()
+}
+
 // GetRole returns the role of a user in a given household, or an error if not a member.
 func (s *Store) GetRole(ctx context.Context, userID, householdID string) (string, error) {
 	var role string
@@ -148,6 +210,7 @@ func (s *Store) AddMember(ctx context.Context, userID, householdID, role string)
 	if err != nil {
 		return fmt.Errorf("add member: %w", err)
 	}
+	s.markHasHousehold(userID)
 	return nil
 }
 
@@ -249,6 +312,7 @@ func (s *Store) RemoveMember(ctx context.Context, userID, householdID string) er
 	if n == 0 {
 		return ErrNotMember
 	}
+	s.forgetHousehold(userID)
 	return nil
 }
 

@@ -274,8 +274,14 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		if h.metrics != nil {
+			h.metrics.ObservePairing("failure")
+		}
 		h.renderPairError(w, r, hh, err.Error())
 		return
+	}
+	if h.metrics != nil {
+		h.metrics.ObservePairing("success")
 	}
 
 	if hwID != "" && number != "" {
@@ -323,7 +329,7 @@ type lineDetailData struct {
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln, hh, role := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -343,18 +349,19 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	// The operator panel renders the selected device through the same builder
 	// the toggle-swap endpoint uses, so the initial page and a later swap show
 	// identical fields.
-	data := h.buildOperatorData(r, ln, hh, selected, devices, allInfos)
+	data := h.buildOperatorData(ln, hh, role == roleAdmin, selected, devices, allInfos)
 	data.chromeData = h.newChromeDataWithHouseholds(r, "phones")
 	data.Devices = devices
 	data.DeviceViews = views
 	data.NumberError = r.URL.Query().Get("number_error")
 
 	allLines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
-	if err == nil {
-		for _, ol := range allLines {
-			if ol.ID != ln.ID {
-				data.OtherLines = append(data.OtherLines, ol)
-			}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "phone detail: list household lines failed", "err", err, "household_id", hh.ID)
+	}
+	for _, ol := range allLines {
+		if ol.ID != ln.ID {
+			data.OtherLines = append(data.OtherLines, ol)
 		}
 	}
 
@@ -384,7 +391,7 @@ func (h *Handler) releaseData() (idx *updates.ReleaseIndex, latestPi, latestFw s
 // means no device rows exist yet (legacy/unpaired connection): fall back to the
 // first hub snapshot and the line-level online state so those connections still
 // render.
-func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *household.Household, hardwareID string, devices []device.Device, allInfos []signaling.DeviceInfoSnapshot) lineDetailData {
+func (h *Handler) buildOperatorData(ln *line.Line, hh *household.Household, isAdmin bool, hardwareID string, devices []device.Device, allInfos []signaling.DeviceInfoSnapshot) lineDetailData {
 	idx, latestPi, latestFw, piReleases, fwReleases := h.releaseData()
 
 	var devInfo *signaling.DeviceInfoSnapshot
@@ -439,14 +446,14 @@ func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *househol
 		FWReleases:            fwReleases,
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
-		IsAdmin:               h.isHouseholdAdmin(r, hh.ID),
+		IsAdmin:               isAdmin,
 		SelectedHardwareID:    hardwareID,
 	}
 }
 
 func (h *Handler) handlePhoneOperator(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln, hh, role := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -458,7 +465,7 @@ func (h *Handler) handlePhoneOperator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allInfos := h.hub.AllDeviceInfo(number)
-	data := h.buildOperatorData(r, ln, hh, hwID, devices, allInfos)
+	data := h.buildOperatorData(ln, hh, role == roleAdmin, hwID, devices, allInfos)
 	data.chromeData = h.newChromeDataWithHouseholds(r, "phones")
 	renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "operator-panel", "am-operator-panel"), data)
 }

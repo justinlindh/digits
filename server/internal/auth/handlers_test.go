@@ -29,9 +29,9 @@ func newTestHandlers(t *testing.T) (*Handlers, *Store, *emailtest.Sender) {
 	t.Helper()
 	s := testDB(t)
 	sender := emailtest.NewSender()
-	google := NewGoogleAuth("", "", "", "", s)
+	google := NewGoogleAuth("", "", "", "", s, nil)
 	tmpl := minimalTemplate(t)
-	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, false)
+	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, false, nil)
 	return h, s, sender
 }
 
@@ -60,9 +60,9 @@ func TestHandleLoginPage(t *testing.T) {
 func TestHandleLoginPage_GoogleEnabled(t *testing.T) {
 	s := testDB(t)
 	sender := emailtest.NewSender()
-	google := NewGoogleAuth("client-id", "client-secret", "http://localhost/callback", "", s)
+	google := NewGoogleAuth("client-id", "client-secret", "http://localhost/callback", "", s, nil)
 	tmpl := minimalTemplate(t)
-	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, false)
+	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, false, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
 	w := httptest.NewRecorder()
@@ -254,9 +254,9 @@ func newTestHandlersDevMode(t *testing.T) (*Handlers, *Store) {
 	t.Helper()
 	s := testDB(t)
 	sender := emailtest.NewSender()
-	google := NewGoogleAuth("", "", "", "", s)
+	google := NewGoogleAuth("", "", "", "", s, nil)
 	tmpl := minimalTemplate(t)
-	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, true)
+	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, true, nil)
 	return h, s
 }
 
@@ -371,5 +371,78 @@ func TestHandleMagicLinkVerify_DialupThemeRedirectsToConnecting(t *testing.T) {
 	}
 	if loc := w.Header().Get("Location"); loc != "/connecting" {
 		t.Errorf("redirect location = %q, want /connecting", loc)
+	}
+}
+
+// fakeMetrics records auth metric calls so tests can assert the handlers emit
+// the expected aggregate events. It satisfies the Metrics interface.
+type fakeMetrics struct {
+	logins     []string // "method/result"
+	magicLinks []string // event
+}
+
+func (f *fakeMetrics) ObserveLogin(method, result string) {
+	f.logins = append(f.logins, method+"/"+result)
+}
+
+func (f *fakeMetrics) ObserveMagicLink(event string) {
+	f.magicLinks = append(f.magicLinks, event)
+}
+
+func newTestHandlersWithMetrics(t *testing.T) (*Handlers, *Store, *fakeMetrics) {
+	t.Helper()
+	s := testDB(t)
+	sender := emailtest.NewSender()
+	m := &fakeMetrics{}
+	google := NewGoogleAuth("", "", "", "", s, m)
+	tmpl := minimalTemplate(t)
+	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, false, m)
+	return h, s, m
+}
+
+func TestMagicLinkRequestEmitsIssuedMetric(t *testing.T) {
+	h, _, m := newTestHandlersWithMetrics(t)
+
+	form := url.Values{"email": {"metrics@example.com"}}
+	req := httptest.NewRequest(http.MethodPost, "/auth/magic", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.HandleMagicLinkRequest(httptest.NewRecorder(), req)
+
+	if len(m.magicLinks) != 1 || m.magicLinks[0] != "issued" {
+		t.Fatalf("magic link events = %v, want [issued]", m.magicLinks)
+	}
+}
+
+func TestMagicLinkVerifyEmitsConsumedAndSuccess(t *testing.T) {
+	h, s, m := newTestHandlersWithMetrics(t)
+
+	token, err := s.CreateMagicLink(context.Background(), "verify-metrics@example.com", MagicLinkTTL, "")
+	if err != nil {
+		t.Fatalf("CreateMagicLink: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/auth/magic/"+token, nil)
+	req.SetPathValue("token", token)
+	h.HandleMagicLinkVerify(httptest.NewRecorder(), req)
+
+	if len(m.magicLinks) != 1 || m.magicLinks[0] != "consumed" {
+		t.Fatalf("magic link events = %v, want [consumed]", m.magicLinks)
+	}
+	if len(m.logins) != 1 || m.logins[0] != "magic_link/success" {
+		t.Fatalf("login events = %v, want [magic_link/success]", m.logins)
+	}
+}
+
+func TestMagicLinkVerifyInvalidTokenEmitsFailure(t *testing.T) {
+	h, _, m := newTestHandlersWithMetrics(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/magic/bad-token", nil)
+	req.SetPathValue("token", "bad-token")
+	h.HandleMagicLinkVerify(httptest.NewRecorder(), req)
+
+	if len(m.logins) != 1 || m.logins[0] != "magic_link/failure" {
+		t.Fatalf("login events = %v, want [magic_link/failure]", m.logins)
+	}
+	if len(m.magicLinks) != 0 {
+		t.Fatalf("expected no magic-link lifecycle event on a failed verify, got %v", m.magicLinks)
 	}
 }
