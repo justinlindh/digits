@@ -355,19 +355,18 @@ func (s *Store) Delete(ctx context.Context, householdID string) error {
 		if err != nil {
 			return fmt.Errorf("delete household members: %w", err)
 		}
+		// Draining Next to completion below auto-closes rows and frees the tx
+		// connection for the DELETE that follows; the defer just guards the
+		// early-return paths.
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var userID string
 			if err := rows.Scan(&userID); err != nil {
-				_ = rows.Close()
 				return fmt.Errorf("scan member user id: %w", err)
 			}
 			memberIDs = append(memberIDs, userID)
 		}
 		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("delete household members: %w", err)
-		}
-		if err := rows.Close(); err != nil {
 			return fmt.Errorf("delete household members: %w", err)
 		}
 

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -118,6 +119,11 @@ func run(ctx context.Context) error {
 	// the hub publishes to a shared channel when a target device is not
 	// connected to this pod. Other pods subscribe and deliver locally.
 	var redisBridge *signaling.RedisBridge
+	// rateLimitRedis is a Redis client dedicated to the rate limiters, tuned for
+	// the hot path with its own connection pool so a stalled check cannot block
+	// or starve the bridge and state stores that share redisBridge's client. Nil
+	// when Redis is unconfigured, which selects the in-memory limiter backend.
+	var rateLimitRedis redis.UniversalClient
 	if cfg.RedisURL != "" {
 		var err error
 		redisBridge, err = signaling.NewRedisBridge(cfg.RedisURL)
@@ -131,6 +137,12 @@ func run(ctx context.Context) error {
 		hub.SetRedis(redisBridge)
 		go hub.Run(ctx)
 		slog.Info("redis pub/sub enabled for multi-replica signaling")
+
+		rateLimitRedis, err = signaling.NewRateLimitRedisClient(cfg.RedisURL)
+		if err != nil {
+			return fmt.Errorf("connect redis (rate limit): %w", err)
+		}
+		defer func() { _ = rateLimitRedis.Close() }()
 	}
 
 	tracker := calls.New(database.DB)
@@ -259,6 +271,7 @@ func run(ctx context.Context) error {
 		InviteStore:    household.NewInviteStore(database.DB),
 		Emailer:        emailSender,
 		Metrics:        mreg,
+		RedisClient:    rateLimitRedis,
 	}, web.HandlerConfig{
 		BaseURL:           cfg.BaseURL,
 		AdminSecret:       cfg.AdminSecret,

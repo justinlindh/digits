@@ -197,6 +197,34 @@ func TestObserveSignalingErrorUnknownCollapsesToOther(t *testing.T) {
 	}
 }
 
+func TestObserveRateLimitRejection(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveRateLimitRejection("auth_magic")
+	r.ObserveRateLimitRejection("auth_magic")
+	r.ObserveRateLimitRejection("ws")
+
+	if got := testutil.ToFloat64(r.RateLimitRejects.WithLabelValues("auth_magic")); got != 2 {
+		t.Errorf("auth_magic counter = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(r.RateLimitRejects.WithLabelValues("ws")); got != 1 {
+		t.Errorf("ws counter = %v, want 1", got)
+	}
+}
+
+// An unknown limiter name must collapse to "other" so a caller bug can never
+// widen the label space on rate_limit_rejections_total.
+func TestObserveRateLimitRejectionUnknownCollapsesToOther(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveRateLimitRejection("not-a-limiter")
+
+	if got := testutil.ToFloat64(r.RateLimitRejects.WithLabelValues("other")); got != 1 {
+		t.Errorf("other counter = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.RateLimitRejects.WithLabelValues("not-a-limiter")); got != 0 {
+		t.Errorf("unknown limiter leaked into its own label: got %v, want 0", got)
+	}
+}
+
 func TestObserveICECandidate(t *testing.T) {
 	r := New("test", "abc123")
 	r.ObserveICECandidate("relay", "tcp")

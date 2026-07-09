@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -56,10 +57,7 @@ func NewRedisBridge(redisURL string) (*RedisBridge, error) {
 	var client redis.UniversalClient
 
 	if master := os.Getenv("REDIS_SENTINEL_MASTER"); master != "" {
-		addrs := strings.Split(redisURL, ",")
-		for i := range addrs {
-			addrs[i] = strings.TrimSpace(addrs[i])
-		}
+		addrs := sentinelAddrs(redisURL)
 		client = redis.NewFailoverClient(&redis.FailoverOptions{
 			MasterName:    master,
 			SentinelAddrs: addrs,
@@ -82,6 +80,52 @@ func NewRedisBridge(redisURL string) (*RedisBridge, error) {
 		client: client,
 		podID:  podID,
 	}, nil
+}
+
+// rateLimitRedisTimeout caps a single rate-limit round-trip at the socket level.
+// The rate limiter sits on the synchronous auth and WebSocket-upgrade paths, so
+// its Redis client is tuned far tighter than the bridge's defaults: a
+// slow-but-reachable Redis should fail open in a fraction of a second rather
+// than stall a login for the multi-second default read timeout.
+const rateLimitRedisTimeout = 500 * time.Millisecond
+
+// NewRateLimitRedisClient builds a Redis client dedicated to the rate limiter,
+// separate from the signaling bridge's client. Two things make it hot-path safe:
+// ContextTimeoutEnabled makes go-redis honor per-call context deadlines (it
+// ignores them by default, so the limiter's own timeout would otherwise be
+// inert), and the tight dial/read/write timeouts bound each socket operation.
+// Because the pool is its own, a stalled Redis check can neither block nor
+// exhaust the connections the bridge and state stores share. Mode selection
+// (standard URL vs sentinel) mirrors NewRedisBridge.
+func NewRateLimitRedisClient(redisURL string) (redis.UniversalClient, error) {
+	if master := os.Getenv("REDIS_SENTINEL_MASTER"); master != "" {
+		return redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:            master,
+			SentinelAddrs:         sentinelAddrs(redisURL),
+			ContextTimeoutEnabled: true,
+			DialTimeout:           rateLimitRedisTimeout,
+			ReadTimeout:           rateLimitRedisTimeout,
+			WriteTimeout:          rateLimitRedisTimeout,
+		}), nil
+	}
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return nil, err
+	}
+	opts.ContextTimeoutEnabled = true
+	opts.DialTimeout = rateLimitRedisTimeout
+	opts.ReadTimeout = rateLimitRedisTimeout
+	opts.WriteTimeout = rateLimitRedisTimeout
+	return redis.NewClient(opts), nil
+}
+
+// sentinelAddrs parses a comma-separated sentinel address list, trimming spaces.
+func sentinelAddrs(list string) []string {
+	addrs := strings.Split(list, ",")
+	for i := range addrs {
+		addrs[i] = strings.TrimSpace(addrs[i])
+	}
+	return addrs
 }
 
 // Publish sends an envelope to the Redis channel. Errors are logged but
