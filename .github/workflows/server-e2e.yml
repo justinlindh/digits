@@ -41,7 +41,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.1'
-          cache-dependency-path: server/go.sum
+          # Deliberate: the self-hosted runner image ships a persistent local Go cache, so actions/cache traffic is pure waste.
+          cache: false
 
       - uses: actions/setup-node@v6
         with:

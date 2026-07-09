@@ -38,6 +38,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.1'
+          # Deliberate: the self-hosted runner image ships a persistent local Go cache, so actions/cache traffic is pure waste.
           cache: false
 
       - name: Integration tests
