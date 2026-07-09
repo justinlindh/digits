@@ -1,3 +1,8 @@
+// Command autodeploy rolls new Pi and firmware builds out to the production
+// server. Each run checks GitHub Releases for a newer tag, deploys it, polls
+// a health check, and reverts and emails on failure. It is a one-shot process
+// (invoked on a timer): -dry-run reports what would happen without changing
+// anything, and -retry clears failed-attempt spin protection before running.
 package main
 
 import (
