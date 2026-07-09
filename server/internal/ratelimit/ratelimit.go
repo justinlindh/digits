@@ -32,15 +32,10 @@ import (
 	"github.com/justinlindh/digits/server/internal/httputil"
 )
 
-// Limiter rejects HTTP requests from an IP that exceed a per-window rate. Both
-// the in-memory and Redis-backed backends satisfy it.
-type Limiter interface {
-	// Middleware wraps next, rejecting over-limit requests with 429.
-	Middleware(next http.Handler) http.Handler
-}
-
 // checker decides whether a single request from ip is within limit. It is the
-// swappable backend behind the shared HTTP plumbing in limiter.
+// swappable backend behind the shared HTTP plumbing in Limiter: an in-memory
+// counter for single-process deployments, or a Redis counter shared across
+// replicas.
 type checker interface {
 	allow(ctx context.Context, ip string) bool
 }
@@ -70,8 +65,8 @@ type Config struct {
 
 // New builds a Limiter using the Redis backend when cfg.Redis is set and the
 // in-memory backend otherwise.
-func New(cfg Config) Limiter {
-	l := &limiter{
+func New(cfg Config) *Limiter {
+	l := &Limiter{
 		name:           cfg.Name,
 		trustedProxies: cfg.TrustedProxies,
 		onReject:       cfg.OnReject,
@@ -84,9 +79,10 @@ func New(cfg Config) Limiter {
 	return l
 }
 
-// limiter is the HTTP plumbing shared by both backends. The backend is the
-// injected checker.
-type limiter struct {
+// Limiter is the HTTP plumbing shared by both backends. The backend (in-memory
+// or Redis-backed) is the injected checker, so the request path is identical
+// regardless of where the counts live.
+type Limiter struct {
 	check          checker
 	name           string
 	trustedProxies int
@@ -95,7 +91,7 @@ type limiter struct {
 
 // Middleware returns an http.Handler that rejects requests over the rate limit
 // with 429 and records a rejection via OnReject.
-func (l *limiter) Middleware(next http.Handler) http.Handler {
+func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := httputil.ClientIP(r, l.trustedProxies)
 		if !l.check.allow(r.Context(), ip) {

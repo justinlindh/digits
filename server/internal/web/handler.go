@@ -228,12 +228,12 @@ type Handler struct {
 	emailer     email.Sender
 	// Rate limiters. All are Handler fields so Router() has a single
 	// construction pattern and limiters can be shared across request types.
-	authLimiter        ratelimit.Limiter // POST /auth/magic (magic link request)
-	magicVerifyLimiter ratelimit.Limiter // GET  /auth/magic/{token}
-	googleLoginLimiter ratelimit.Limiter // GET  /auth/google/login
-	pairingLimiter     ratelimit.Limiter // POST /phones/pair
-	inviteLimiter      ratelimit.Limiter // POST /settings/household/invite
-	wsLimiter          ratelimit.Limiter // GET  /ws (WebSocket upgrade)
+	authLimiter        *ratelimit.Limiter // POST /auth/magic (magic link request)
+	magicVerifyLimiter *ratelimit.Limiter // GET  /auth/magic/{token}
+	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
+	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
+	inviteLimiter      *ratelimit.Limiter // POST /settings/household/invite
+	wsLimiter          *ratelimit.Limiter // GET  /ws (WebSocket upgrade)
 	// Updates
 	releases *updates.GitHubReleases
 	// Metrics is the optional Prometheus registry. When set, a request
@@ -421,7 +421,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if deps.Metrics != nil {
 		onReject = deps.Metrics.ObserveRateLimitRejection
 	}
-	newLimiter := func(name string, limit int) ratelimit.Limiter {
+	newLimiter := func(name string, limit int) *ratelimit.Limiter {
 		return ratelimit.New(ratelimit.Config{
 			Name:           name,
 			Limit:          limit,
