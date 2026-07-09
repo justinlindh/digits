@@ -284,6 +284,41 @@ func TestReadLoopReopenOnRequest(t *testing.T) {
 	}
 }
 
+func TestWritersDoNotPanicWhileLinkDown(t *testing.T) {
+	p1 := newFakePort()
+	// Only one port is ever handed out. After the read error the reader tries to
+	// reopen, the factory is exhausted, and it settles into the backoff loop with
+	// sp.port left nil: exactly the window a writer must survive without panicking.
+	pf := &portFactory{results: []openResult{{port: p1}}}
+	sp := newTestSerialPort(t, pf)
+
+	// Kill the link, then wait until the port is actually nil (checked under mu,
+	// so this does not race the reader's reopen). Once the factory is exhausted
+	// the down state is stable: only a successful reopen would clear it.
+	p1.feedErr(errors.New("read: i/o error"))
+	portIsNil := func() bool {
+		sp.mu.Lock()
+		defer sp.mu.Unlock()
+		return sp.port == nil
+	}
+	waitFor(t, portIsNil, 2*time.Second, "port never became nil after failed reopen")
+
+	// SendCommand must return the link-down sentinel, not deref a nil port.
+	_, err := sp.SendCommand("PING", time.Second)
+	if !errors.Is(err, errLinkDown) {
+		t.Fatalf("SendCommand while link down: got err %v, want errLinkDown", err)
+	}
+
+	// SendFire is fire-and-forget: it must return cleanly, no panic.
+	sp.SendFire("RING:START")
+
+	// The port is still down, so a second round must behave identically.
+	if _, err := sp.SendCommand("VERSION", time.Second); !errors.Is(err, errLinkDown) {
+		t.Fatalf("second SendCommand while link down: got err %v, want errLinkDown", err)
+	}
+	sp.LED("blink")
+}
+
 func TestReadLoopDoubleCloseNoPanic(t *testing.T) {
 	p := newFakePort()
 	pf := &portFactory{results: []openResult{{port: p}}}

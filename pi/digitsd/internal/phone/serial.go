@@ -24,6 +24,12 @@ const (
 	readErrMaxBackoff     = 5 * time.Second
 )
 
+// errLinkDown is returned by writers when the port is nil: the reader is
+// between a failed reopen and its next retry, so there is nothing to write to.
+// The link comes back on its own once a reopen succeeds; callers should treat
+// this as transient, not fatal.
+var errLinkDown = errors.New("serial: link down")
+
 // SerialPort owns /dev/serial0 and provides thread-safe read/write.
 // Owns the serial port to the Pico: reads UART events, sends commands.
 type SerialPort struct {
@@ -138,6 +144,10 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	sp.respCh.Store(&ch)
 	defer sp.respCh.Store(nil)
 
+	if sp.port == nil {
+		return "", errLinkDown
+	}
+
 	sp.logger.Info("TX", "cmd", cmd)
 	sp.broadcastMonitor("> " + cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
@@ -159,6 +169,10 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 func (sp *SerialPort) SendFire(cmd string) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
+	if sp.port == nil {
+		sp.logger.Warn("serial: dropping fire, link down", "cmd", cmd)
+		return
+	}
 	sp.logger.Info("TX", "cmd", cmd)
 	sp.broadcastMonitor("> " + cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {

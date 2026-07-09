@@ -2425,12 +2425,15 @@ func main() {
 		case <-healthTicker.C:
 			// One periodic line so remote triage does not need a debugger:
 			// link state, reopen churn, dropped-line count, firmware version.
+			// fw_boot_* is the version captured at daemon startup (refreshed on
+			// reflash via fwVersionCh); it can lag the Pico's running firmware if
+			// it was reflashed out from under us without that channel firing.
 			slog.Info("uart health",
 				"link_up", sp.LinkUp(),
 				"reopens", sp.Reopens(),
 				"dropped_lines", sp.DroppedLines(),
-				"fw_version", fwVersion,
-				"fw_commit", fwCommit)
+				"fw_boot_version", fwVersion,
+				"fw_boot_commit", fwCommit)
 
 		case msg := <-sig.Inbox():
 			cb.handleSignal(msg)
