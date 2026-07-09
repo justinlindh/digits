@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -227,12 +228,12 @@ type Handler struct {
 	emailer     email.Sender
 	// Rate limiters. All are Handler fields so Router() has a single
 	// construction pattern and limiters can be shared across request types.
-	authLimiter        *ratelimit.Limiter // POST /auth/magic (magic link request)
-	magicVerifyLimiter *ratelimit.Limiter // GET  /auth/magic/{token}
-	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
-	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
-	inviteLimiter      *ratelimit.Limiter // POST /settings/household/invite
-	wsLimiter          *ratelimit.Limiter // GET  /ws (WebSocket upgrade)
+	authLimiter        ratelimit.Limiter // POST /auth/magic (magic link request)
+	magicVerifyLimiter ratelimit.Limiter // GET  /auth/magic/{token}
+	googleLoginLimiter ratelimit.Limiter // GET  /auth/google/login
+	pairingLimiter     ratelimit.Limiter // POST /phones/pair
+	inviteLimiter      ratelimit.Limiter // POST /settings/household/invite
+	wsLimiter          ratelimit.Limiter // GET  /ws (WebSocket upgrade)
 	// Updates
 	releases *updates.GitHubReleases
 	// Metrics is the optional Prometheus registry. When set, a request
@@ -290,6 +291,10 @@ type Deps struct {
 	InviteStore    *household.InviteStore
 	Emailer        email.Sender
 	Metrics        *metrics.Registry
+	// RedisClient, when non-nil, backs the rate limiters with a shared counter
+	// so limits hold across replicas. Nil selects the per-process in-memory
+	// limiter, which is all dev and single-replica deployments need.
+	RedisClient redis.UniversalClient
 }
 
 func wsRateLimit(cfg HandlerConfig) int {
@@ -408,6 +413,25 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		},
 	}
 
+	// Rate limiters. RedisClient (when set) backs them with a shared counter so
+	// the configured limits hold across all replicas; nil falls back to the
+	// per-process in-memory limiter. onReject records a rejection metric when a
+	// registry is wired.
+	var onReject func(string)
+	if deps.Metrics != nil {
+		onReject = deps.Metrics.ObserveRateLimitRejection
+	}
+	newLimiter := func(name string, limit int) ratelimit.Limiter {
+		return ratelimit.New(ratelimit.Config{
+			Name:           name,
+			Limit:          limit,
+			Window:         time.Minute,
+			TrustedProxies: cfg.TrustedProxies,
+			Redis:          deps.RedisClient,
+			OnReject:       onReject,
+		})
+	}
+
 	return &Handler{
 		upgrader:                 u,
 		lineStore:                deps.LineStore,
@@ -443,12 +467,12 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		linkStore:                deps.LinkStore,
 		inviteStore:              deps.InviteStore,
 		emailer:                  deps.Emailer,
-		authLimiter:              ratelimit.New(5, time.Minute, cfg.TrustedProxies),
-		magicVerifyLimiter:       ratelimit.New(10, time.Minute, cfg.TrustedProxies),
-		googleLoginLimiter:       ratelimit.New(10, time.Minute, cfg.TrustedProxies),
-		pairingLimiter:           ratelimit.New(5, time.Minute, cfg.TrustedProxies),
-		inviteLimiter:            ratelimit.New(5, time.Minute, cfg.TrustedProxies),
-		wsLimiter:                ratelimit.New(wsRateLimit(cfg), time.Minute, cfg.TrustedProxies),
+		authLimiter:              newLimiter("auth_magic", 5),
+		magicVerifyLimiter:       newLimiter("magic_verify", 10),
+		googleLoginLimiter:       newLimiter("google_login", 10),
+		pairingLimiter:           newLimiter("pairing", 5),
+		inviteLimiter:            newLimiter("invite", 5),
+		wsLimiter:                newLimiter("ws", wsRateLimit(cfg)),
 		metrics:                  deps.Metrics,
 	}, nil
 }

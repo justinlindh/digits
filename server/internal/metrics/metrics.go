@@ -60,6 +60,7 @@ type Registry struct {
 	SignalingErrors  *prometheus.CounterVec
 	ICECandidates    *prometheus.CounterVec
 	ICEServersIssued *prometheus.CounterVec
+	RateLimitRejects *prometheus.CounterVec
 	BuildInfo        *prometheus.GaugeVec
 }
 
@@ -126,6 +127,15 @@ func New(version, commit string) *Registry {
 		},
 		[]string{"turn"},
 	)
+	r.RateLimitRejects = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "digits",
+			Subsystem: serviceName,
+			Name:      "rate_limit_rejections_total",
+			Help:      "Requests rejected by a rate limiter with 429, partitioned by limiter name (a fixed enum of endpoint groups). No IP or identity is recorded.",
+		},
+		[]string{"limiter"},
+	)
 	r.BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "digits",
@@ -143,6 +153,7 @@ func New(version, commit string) *Registry {
 		r.SignalingErrors,
 		r.ICECandidates,
 		r.ICEServersIssued,
+		r.RateLimitRejects,
 		r.BuildInfo,
 	)
 
@@ -242,6 +253,24 @@ func (r *Registry) ObserveICECandidate(candType, transport string) {
 // partitioned by whether TURN was included.
 func (r *Registry) ObserveICEServersIssued(turn bool) {
 	r.ICEServersIssued.WithLabelValues(strconv.FormatBool(turn)).Inc()
+}
+
+// validRateLimiters is the closed set of limiter names accepted by
+// ObserveRateLimitRejection. As with the other label sets, a value outside it
+// collapses to "other" so the label space can never be widened at runtime.
+var validRateLimiters = map[string]struct{}{
+	"auth_magic":   {},
+	"magic_verify": {},
+	"google_login": {},
+	"pairing":      {},
+	"invite":       {},
+	"ws":           {},
+}
+
+// ObserveRateLimitRejection records one request rejected by a rate limiter,
+// partitioned by limiter name. Unknown names collapse to "other".
+func (r *Registry) ObserveRateLimitRejection(limiter string) {
+	r.RateLimitRejects.WithLabelValues(sanitizeLabel(limiter, validRateLimiters)).Inc()
 }
 
 // Middleware returns an http.Handler middleware that records request count

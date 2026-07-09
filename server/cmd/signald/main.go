@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -44,6 +45,16 @@ import (
 
 // releaseCacheTTL is the release index cache lifetime.
 const releaseCacheTTL = 5 * time.Minute
+
+// redisClient returns the shared Redis client from the bridge, or nil when
+// Redis is not configured. The rate limiters use nil to select their
+// per-process in-memory backend.
+func redisClient(b *signaling.RedisBridge) redis.UniversalClient {
+	if b == nil {
+		return nil
+	}
+	return b.Client()
+}
 
 func main() {
 	logging.Setup()
@@ -259,6 +270,7 @@ func run(ctx context.Context) error {
 		InviteStore:    household.NewInviteStore(database.DB),
 		Emailer:        emailSender,
 		Metrics:        mreg,
+		RedisClient:    redisClient(redisBridge),
 	}, web.HandlerConfig{
 		BaseURL:           cfg.BaseURL,
 		AdminSecret:       cfg.AdminSecret,
