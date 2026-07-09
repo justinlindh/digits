@@ -1,8 +1,11 @@
 package phone
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,25 +14,52 @@ import (
 	"go.bug.st/serial"
 )
 
+// Read-error recovery backoff bounds. go.bug.st/serial reports a plain read
+// timeout as (0, nil), so any non-nil Read error means the link is actually
+// broken (the Pico crashed, dropped into BOOTSEL, or the cable came loose).
+// The reader closes and reopens the port, backing off between attempts so a
+// permanently dead /dev/serial0 does not busy-spin a core.
+const (
+	readErrInitialBackoff = 200 * time.Millisecond
+	readErrMaxBackoff     = 5 * time.Second
+)
+
+// errLinkDown is returned by writers when the port is nil: the reader is
+// between a failed reopen and its next retry, so there is nothing to write to.
+// The link comes back on its own once a reopen succeeds; callers should treat
+// this as transient, not fatal.
+var errLinkDown = errors.New("serial: link down")
+
 // SerialPort owns /dev/serial0 and provides thread-safe read/write.
 // Owns the serial port to the Pico: reads UART events, sends commands.
 type SerialPort struct {
-	port   serial.Port
+	// open re-establishes a fully configured port. Retained so the reader can
+	// reopen after a disconnect and so tests can inject a fake transport.
+	open   func() (serial.Port, error)
+	device string
+	baud   int
+
 	events chan string // parsed RX events (HOOK:OFF, KEY:5, etc.)
 
 	mu           sync.Mutex
+	port         serial.Port                 // reopened only by readLoop; read by writers under mu
 	respCh       atomic.Pointer[chan string] // single-slot response channel for command/response pairs
 	flashEnabled atomic.Bool                 // whether HOOK:FLASH should be forwarded (requires firmware v1.5.0+)
 	droppedLines atomic.Int64                // count of unrecognized UART lines dropped
+	reopens      atomic.Int64                // count of successful port reopens (field-triage signal)
+	linkUp       atomic.Bool                 // false while the port is down or a read error is outstanding
+	reopenReq    chan struct{}               // liveness check asks the reader to reopen a silently dead link
 	stop         chan struct{}
+	closeOnce    sync.Once
 	logger       *slog.Logger
 
 	monitorMu sync.Mutex
 	monitors  map[chan string]struct{} // tap subscribers (e.g. interactive UART terminal)
 }
 
-// OpenSerial opens the serial port and starts the RX reader goroutine.
-func OpenSerial(device string, baud int, logger *slog.Logger) (*SerialPort, error) {
+// openConfiguredPort opens device at baud and applies the read timeout that
+// makes readLoop poll rather than block forever.
+func openConfiguredPort(device string, baud int) (serial.Port, error) {
 	mode := &serial.Mode{BaudRate: baud}
 	port, err := serial.Open(device, mode)
 	if err != nil {
@@ -39,13 +69,27 @@ func OpenSerial(device string, baud int, logger *slog.Logger) (*SerialPort, erro
 		_ = port.Close()
 		return nil, fmt.Errorf("serial set timeout: %w", err)
 	}
+	return port, nil
+}
 
+// OpenSerial opens the serial port and starts the RX reader goroutine.
+func OpenSerial(device string, baud int, logger *slog.Logger) (*SerialPort, error) {
 	sp := &SerialPort{
-		port:   port,
-		events: make(chan string, 64),
-		stop:   make(chan struct{}),
-		logger: logger,
+		open:      func() (serial.Port, error) { return openConfiguredPort(device, baud) },
+		device:    device,
+		baud:      baud,
+		events:    make(chan string, 64),
+		reopenReq: make(chan struct{}, 1),
+		stop:      make(chan struct{}),
+		logger:    logger,
 	}
+
+	port, err := sp.open()
+	if err != nil {
+		return nil, err
+	}
+	sp.port = port
+	sp.linkUp.Store(true)
 
 	go sp.readLoop()
 	return sp, nil
@@ -100,6 +144,10 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	sp.respCh.Store(&ch)
 	defer sp.respCh.Store(nil)
 
+	if sp.port == nil {
+		return "", errLinkDown
+	}
+
 	sp.logger.Info("TX", "cmd", cmd)
 	sp.broadcastMonitor("> " + cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
@@ -121,6 +169,10 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 func (sp *SerialPort) SendFire(cmd string) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
+	if sp.port == nil {
+		sp.logger.Warn("serial: dropping fire, link down", "cmd", cmd)
+		return
+	}
 	sp.logger.Info("TX", "cmd", cmd)
 	sp.broadcastMonitor("> " + cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
@@ -187,6 +239,32 @@ func (sp *SerialPort) flashEnabledNow() bool {
 // DroppedLines returns the number of unrecognized UART lines that were dropped.
 func (sp *SerialPort) DroppedLines() int64 {
 	return sp.droppedLines.Load()
+}
+
+// LinkUp reports whether the reader currently holds a live port. It goes false
+// the instant a read error is seen and true again once a reopen succeeds. A
+// silently wedged Pico (Read keeps timing out with no error) still reads true
+// here; use a PING to probe that case and call RequestReopen on failure.
+func (sp *SerialPort) LinkUp() bool {
+	return sp.linkUp.Load()
+}
+
+// Reopens returns how many times the reader has re-established the port after a
+// disconnect. A climbing count is the field signal that the UART link is flapping.
+func (sp *SerialPort) Reopens() int64 {
+	return sp.reopens.Load()
+}
+
+// RequestReopen asks the reader goroutine to close and reopen the port on its
+// next poll. Used by the liveness check when PING stops answering but Read has
+// not returned an error (the Pico is wedged, not disconnected), a case the
+// read-error path cannot detect on its own. Non-blocking and idempotent: a
+// pending request already queued is left as-is.
+func (sp *SerialPort) RequestReopen() {
+	select {
+	case sp.reopenReq <- struct{}{}:
+	default:
+	}
 }
 
 // StartRing sends RING:START to the Pico to begin ringing.
@@ -266,9 +344,15 @@ func (sp *SerialPort) DisableFlashDetection() {
 	sp.SendFire("HOOK:FLASH:OFF")
 }
 
-// Close stops the reader and closes the port.
+// Close stops the reader and closes the port. Safe to call more than once:
+// the stop channel is closed at most once, so a double Close never panics.
 func (sp *SerialPort) Close() error {
-	close(sp.stop)
+	sp.closeOnce.Do(func() { close(sp.stop) })
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sp.port == nil {
+		return nil
+	}
 	return sp.port.Close()
 }
 
@@ -353,9 +437,90 @@ func isKnownResponsePrefix(line string) bool {
 	}
 }
 
+// isReadTimeout reports whether err is a benign read timeout that the reader
+// should retry immediately, versus a real error that means the link is broken.
+// go.bug.st/serial signals a plain timeout as (0, nil), so in practice any
+// non-nil Read error is a real one; this still recognizes deadline/timeout
+// style errors so a future transport that surfaces them cannot be mistaken for
+// a disconnect and trigger needless reopen churn.
+func isReadTimeout(err error) bool {
+	if err == nil {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	return errors.Is(err, os.ErrDeadlineExceeded)
+}
+
+// nextBackoff doubles d up to readErrMaxBackoff.
+func nextBackoff(d time.Duration) time.Duration {
+	d *= 2
+	if d > readErrMaxBackoff {
+		return readErrMaxBackoff
+	}
+	return d
+}
+
+// sleepStop waits for d or for Close, whichever comes first. It returns true if
+// Close fired so the caller can stop the reader promptly instead of sleeping
+// out a long backoff during shutdown.
+func (sp *SerialPort) sleepStop(d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-sp.stop:
+		return true
+	case <-t.C:
+		return false
+	}
+}
+
+// reopen closes the current port and opens a fresh one. Called only from the
+// reader goroutine, so it never races another reopen; it takes sp.mu so an
+// in-flight writer never touches a port mid-swap. On failure sp.port is left
+// nil and linkUp false; the reader retries with backoff.
+func (sp *SerialPort) reopen() error {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sp.port != nil {
+		_ = sp.port.Close()
+		sp.port = nil
+	}
+	port, err := sp.open()
+	if err != nil {
+		sp.linkUp.Store(false)
+		return err
+	}
+	sp.port = port
+	sp.reopens.Add(1)
+	sp.linkUp.Store(true)
+	return nil
+}
+
+// recoverLink reopens the port and, on failure, sleeps out the current backoff
+// so a dead device does not busy-spin. It updates *backoff in place (reset on
+// success, doubled on failure) and returns true if Close fired during the wait
+// so the reader can exit promptly.
+func (sp *SerialPort) recoverLink(backoff *time.Duration) (stopped bool) {
+	if err := sp.reopen(); err != nil {
+		sp.logger.Warn("serial: reopen failed, backing off", "device", sp.device, "error", err, "backoff", *backoff)
+		if sp.sleepStop(*backoff) {
+			return true
+		}
+		*backoff = nextBackoff(*backoff)
+		return false
+	}
+	sp.logger.Warn("serial: reopened UART link", "device", sp.device, "reopens", sp.reopens.Load())
+	*backoff = readErrInitialBackoff
+	return false
+}
+
 func (sp *SerialPort) readLoop() {
 	buf := make([]byte, 256)
 	var lineBuf strings.Builder
+	backoff := readErrInitialBackoff
 
 	for {
 		select {
@@ -364,16 +529,53 @@ func (sp *SerialPort) readLoop() {
 		default:
 		}
 
-		n, err := sp.port.Read(buf)
+		// The liveness check declared the link dead even though Read has not
+		// errored (a wedged Pico still lets the fd time out cleanly). Honor
+		// the reopen request before the next Read so a stuck port is cycled.
+		select {
+		case <-sp.reopenReq:
+			sp.logger.Warn("serial: reopen requested by liveness check", "device", sp.device)
+			sp.linkUp.Store(false)
+			lineBuf.Reset()
+			if sp.recoverLink(&backoff) {
+				return
+			}
+			continue
+		default:
+		}
+
+		port := sp.port
+		if port == nil {
+			// A prior reopen failed; keep retrying with backoff.
+			if sp.recoverLink(&backoff) {
+				return
+			}
+			continue
+		}
+
+		n, err := port.Read(buf)
 		if err != nil {
+			if isReadTimeout(err) {
+				continue
+			}
 			select {
 			case <-sp.stop:
 				return
 			default:
-				// Read timeout, normal, just retry
-				continue
 			}
+			// A real error: the Pico crashed, dropped into BOOTSEL, or the
+			// cable is gone. Mark the link down, discard any partial line, and
+			// reopen (backoff bounds the retry).
+			sp.linkUp.Store(false)
+			lineBuf.Reset()
+			sp.logger.Warn("serial: read error, reopening link", "device", sp.device, "error", err)
+			if sp.recoverLink(&backoff) {
+				return
+			}
+			continue
 		}
+		// A read returned without error (n may be 0 on a timeout); backoff is
+		// already at its initial value since every reopen resets it.
 
 		for i := 0; i < n; i++ {
 			ch := buf[i]
