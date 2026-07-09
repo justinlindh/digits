@@ -29,6 +29,9 @@ on:
 
 jobs:
   groom:
+    # Deliberately GitHub-hosted: release-path jobs stay off the homelab runner pool so
+    # releases still groom when it is down, and this job needs the gh CLI that the
+    # hosted image guarantees. Matches fw/pi/server-release.
     runs-on: ubuntu-latest
     permissions:
       contents: write

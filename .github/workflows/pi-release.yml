@@ -24,6 +24,9 @@ concurrency:
 
 jobs:
   release:
+    # Deliberately GitHub-hosted: the multiarch apt setup below is written against the
+    # hosted Ubuntu image (ubuntu.sources layout, ports.ubuntu.com), and release-path
+    # jobs stay off the homelab runner pool so releases publish even when it is down.
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -48,6 +51,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26.1"
+          # GitHub-hosted runner: no persistent local Go cache here, so the actions cache earns its keep.
           cache-dependency-path: |
             pi/digitsd/go.sum
 

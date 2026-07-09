@@ -10,6 +10,13 @@ on:
   pull_request_review:
     types: [submitted]
 
+# Serialize runs per issue/PR so two @claude triggers on the same thread don't
+# race each other. Never cancel-in-progress: killing an in-flight run would
+# drop a half-posted review or abandon commits mid-push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   claude:
     if: |
