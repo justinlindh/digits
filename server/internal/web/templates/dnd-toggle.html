@@ -9,7 +9,7 @@
   <label class="toggle toggle--sm">
     <input type="checkbox" name="enabled" value="true"
            {{if .AllSilent}}checked{{end}}
-           onchange="this.form.requestSubmit()">
+           data-autosubmit>
     <span class="toggle__track"></span>
   </label>
   <span class="dnd-toggle__label">Silence all</span>
@@ -40,7 +40,7 @@
     <label class="am-settings__dip" aria-label="Do Not Disturb">
       <input type="checkbox" name="enabled" value="true"
              {{if .AllSilent}}checked{{end}}
-             onchange="this.form.requestSubmit()"
+             data-autosubmit
              class="am-settings__dip-input">
       <span class="am-settings__dip-body" aria-hidden="true">
         <span class="am-settings__dip-label am-settings__dip-label--on">1</span>

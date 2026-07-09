@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="{{static "dialup.css"}}">
 <script src="{{static "htmx.min.js"}}"></script>
 <script src="{{static "sse.min.js"}}"></script>
+<script src="{{static "digits.js"}}" defer></script>
 </head>
 <body class="dialup{{if and .User (eq .User.CRTMode "all")}} crt-all{{end}}">
 
@@ -149,18 +150,6 @@
      origin, so autoplay here succeeds. preload="none" keeps the file off
      the wire on every navigation; only the welcome=1 branch fetches it. */}}
 <audio id="dialup-welcome" src="/static/audio/welcome.mp3" preload="none"></audio>
-<script>
-(function () {
-  var params = new URLSearchParams(window.location.search);
-  if (params.get('welcome') !== '1') return;
-  params.delete('welcome');
-  var q = params.toString();
-  var clean = window.location.pathname + (q ? '?' + q : '') + window.location.hash;
-  window.history.replaceState({}, '', clean);
-  var audio = document.getElementById('dialup-welcome');
-  if (audio) audio.play().catch(function () { /* autoplay blocked; silent */ });
-})();
-</script>
 {{else}}
 <!-- Login / unauthenticated: show bare content with no client chrome -->
 {{block "content" .}}{{end}}

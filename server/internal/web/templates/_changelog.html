@@ -1,8 +1,8 @@
 {{define "changelog-dialog-markup"}}
-<dialog id="changelog-dialog" class="changelog-dialog">
+<dialog id="changelog-dialog" class="changelog-dialog" data-backdrop-close>
   <div class="changelog-dialog__titlebar" aria-hidden="true">
     <span class="changelog-dialog__titlebar-title">What's new</span>
-    <button type="button" class="changelog-dialog__titlebar-x" onclick="this.closest('dialog').close()" aria-label="Close">&#x2715;</button>
+    <button type="button" class="changelog-dialog__titlebar-x" data-dialog-close aria-label="Close">&#x2715;</button>
   </div>
   <div class="changelog-dialog__body">
     <h2 class="changelog-dialog__title">What's new</h2>
@@ -11,15 +11,6 @@
     </div>
   </div>
 </dialog>
-<script>
-(function () {
-  var d = document.getElementById('changelog-dialog');
-  if (!d) return;
-  d.addEventListener('click', function (e) {
-    if (e.target === d) d.close();
-  });
-})();
-</script>
 {{end}}
 
 {{define "changelog-content"}}
@@ -83,48 +74,4 @@
     {{end}}
   </div>
 </div>
-<script>
-(function () {
-  var tabs = document.querySelectorAll('.changelog-tab');
-  var panels = document.querySelectorAll('.changelog-panel');
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      var target = tab.getAttribute('data-tab');
-      tabs.forEach(function (t) { t.classList.remove('changelog-tab--active'); t.setAttribute('aria-selected', 'false'); });
-      panels.forEach(function (p) { p.classList.remove('changelog-panel--active'); });
-      tab.classList.add('changelog-tab--active');
-      tab.setAttribute('aria-selected', 'true');
-      var panel = document.querySelector('[data-panel="' + target + '"]');
-      if (panel) panel.classList.add('changelog-panel--active');
-    });
-  });
-
-  var activeAudio = null;
-  var activeBtn = null;
-  document.querySelector('.changelog').addEventListener('click', function (e) {
-    var btn = e.target.closest('.changelog__play');
-    if (!btn) return;
-    if (activeAudio) {
-      activeAudio.pause();
-      activeAudio = null;
-      if (activeBtn) activeBtn.innerHTML = '&#9654; Listen';
-      if (activeBtn === btn) { activeBtn = null; return; }
-    }
-    var audio = new Audio(btn.dataset.audioUrl);
-    audio.addEventListener('ended', function () {
-      btn.innerHTML = '&#9654; Listen';
-      activeAudio = null;
-      activeBtn = null;
-    });
-    audio.play().catch(function () {
-      btn.innerHTML = '&#9654; Listen';
-      activeAudio = null;
-      activeBtn = null;
-    });
-    btn.innerHTML = '&#9724; Stop';
-    activeAudio = audio;
-    activeBtn = btn;
-  });
-})();
-</script>
 {{end}}
