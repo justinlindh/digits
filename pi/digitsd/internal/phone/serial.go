@@ -560,9 +560,8 @@ func (sp *SerialPort) readLoop() {
 			}
 			continue
 		}
-		// A read that returns without error (n may be 0 on a timeout) proves
-		// the link is healthy; reset the backoff.
-		backoff = readErrInitialBackoff
+		// A read returned without error (n may be 0 on a timeout); backoff is
+		// already at its initial value since every reopen resets it.
 
 		for i := 0; i < n; i++ {
 			ch := buf[i]
