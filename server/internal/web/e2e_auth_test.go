@@ -36,7 +36,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	authStore := auth.NewStore(rawDB)
 
 	// Google OAuth disabled (empty credentials)
-	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
+	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore, nil)
 
 	// Noop email sender
 	emailSender := emailtest.NewSender()
@@ -47,7 +47,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 		t.Fatalf("parse login template: %v", err)
 	}
 
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
+	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false, nil)
 
 	hub := signaling.NewHub()
 	tracker := calls.New(nil) // nil DB: no DB calls expected in these tests

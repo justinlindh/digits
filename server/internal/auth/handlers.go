@@ -11,6 +11,15 @@ import (
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
+// Metrics records aggregate, non-identifying auth outcomes. It is implemented
+// by *metrics.Registry; the interface lives here so the auth package does not
+// import the metrics package and so handler tests can pass a fake or nil. All
+// methods must tolerate a nil receiver value via the guarded package helpers.
+type Metrics interface {
+	ObserveLogin(method, result string)
+	ObserveMagicLink(event string)
+}
+
 // Handlers provides HTTP handlers for login, magic link, and logout flows.
 type Handlers struct {
 	store        *Store
@@ -20,11 +29,13 @@ type Handlers struct {
 	cookieDomain string // optional, e.g. ".digits.family" for subdomain sharing
 	loginTmpl    *template.Template
 	devMode      bool
+	metrics      Metrics // may be nil
 }
 
 // NewHandlers creates auth HTTP handlers.
 // cookieDomain sets the cookie Domain attribute (e.g. ".digits.family"); pass "" to omit it.
-func NewHandlers(store *Store, google *GoogleAuth, emailer email.Sender, baseURL, cookieDomain string, loginTmpl *template.Template, devMode bool) *Handlers {
+// m may be nil, in which case auth metrics are not recorded.
+func NewHandlers(store *Store, google *GoogleAuth, emailer email.Sender, baseURL, cookieDomain string, loginTmpl *template.Template, devMode bool, m Metrics) *Handlers {
 	return &Handlers{
 		store:        store,
 		google:       google,
@@ -33,6 +44,21 @@ func NewHandlers(store *Store, google *GoogleAuth, emailer email.Sender, baseURL
 		cookieDomain: cookieDomain,
 		loginTmpl:    loginTmpl,
 		devMode:      devMode,
+		metrics:      m,
+	}
+}
+
+// observeLogin and observeMagicLink guard the nil-metrics case so call sites
+// stay a single line.
+func (h *Handlers) observeLogin(method, result string) {
+	if h.metrics != nil {
+		h.metrics.ObserveLogin(method, result)
+	}
+}
+
+func (h *Handlers) observeMagicLink(event string) {
+	if h.metrics != nil {
+		h.metrics.ObserveMagicLink(event)
 	}
 }
 
@@ -70,6 +96,7 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/auth/login?error=try+again", http.StatusSeeOther)
 		return
 	}
+	h.observeMagicLink("issued")
 
 	link := fmt.Sprintf("%s/auth/magic/%s", h.baseURL, token)
 
@@ -90,12 +117,15 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 	token := r.PathValue("token")
 	emailAddr, returnTo, err := h.store.ValidateMagicLink(r.Context(), token)
 	if err != nil {
+		h.observeLogin("magic_link", "failure")
 		http.Redirect(w, r, "/auth/login?error=invalid+or+expired+link", http.StatusSeeOther)
 		return
 	}
+	h.observeMagicLink("consumed")
 
 	user, _, err := h.store.GetOrCreateUserByEmail(r.Context(), emailAddr)
 	if err != nil {
+		h.observeLogin("magic_link", "failure")
 		slog.ErrorContext(r.Context(), "magic link verify: get or create user", "err", err)
 		http.Error(w, "failed to look up user", http.StatusInternalServerError)
 		return
@@ -107,9 +137,11 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 
 	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
+		h.observeLogin("magic_link", "failure")
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
+	h.observeLogin("magic_link", "success")
 
 	setSessionCookie(w, h.cookieDomain, sessionToken, true)
 
@@ -157,6 +189,7 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
+	h.observeLogin("dev", "success")
 
 	// Dev-only: derive Secure from request scheme so plain HTTP localhost still works.
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"

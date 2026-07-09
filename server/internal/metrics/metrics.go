@@ -20,6 +20,11 @@
 //   - ICE-server responses issued, labeled only by whether TURN was included.
 //     No device identity and never the TURN username or credential.
 //   - Build info as a static gauge labeled with the version and short commit.
+//   - Auth outcomes as aggregate counts only: logins by method (magic_link/
+//     google/dev) and result (success/failure), magic-link lifecycle events
+//     (issued/consumed), and device-pairing results (success/failure). Every
+//     label is a fixed enum; no email, OAuth identity, token, pairing code, or
+//     device identity is ever recorded.
 //   - Go runtime and process collectors (goroutines, GC pauses, memory, fd
 //     count) provided by promhttp / collectors. Same data the Go runtime
 //     pprof endpoints already expose.
@@ -61,6 +66,12 @@ type Registry struct {
 	ICECandidates    *prometheus.CounterVec
 	ICEServersIssued *prometheus.CounterVec
 	BuildInfo        *prometheus.GaugeVec
+
+	// Auth metrics. Aggregate counts only; see ObserveLogin, ObserveMagicLink,
+	// and ObservePairing for the closed label sets.
+	AuthLogins *prometheus.CounterVec
+	MagicLinks *prometheus.CounterVec
+	Pairings   *prometheus.CounterVec
 }
 
 // New builds a Registry with all metrics registered. Callers wire live-state
@@ -137,6 +148,37 @@ func New(version, commit string) *Registry {
 	)
 	r.BuildInfo.WithLabelValues(version, commit).Set(1)
 
+	// Auth metrics block. Every label is drawn from a closed enum sanitized at
+	// the Observe call site, so a caller bug can never widen the label space or
+	// smuggle an email, token, or code into a series.
+	r.AuthLogins = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "digits",
+			Subsystem: serviceName,
+			Name:      "auth_logins_total",
+			Help:      "Login attempts that reached a terminal outcome, partitioned by method (magic_link/google/dev) and result (success/failure). No email or identity is recorded.",
+		},
+		[]string{"method", "result"},
+	)
+	r.MagicLinks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "digits",
+			Subsystem: serviceName,
+			Name:      "auth_magic_links_total",
+			Help:      "Magic-link lifecycle events, partitioned by event (issued when a link is created, before the email send is attempted, consumed when a valid link mints a session). A large issued-minus-consumed gap points at email delivery problems. No email or token is recorded.",
+		},
+		[]string{"event"},
+	)
+	r.Pairings = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "digits",
+			Subsystem: serviceName,
+			Name:      "auth_pairings_total",
+			Help:      "Device-pairing claim attempts, partitioned by result (success/failure). No pairing code or device identity is recorded.",
+		},
+		[]string{"result"},
+	)
+
 	reg.MustRegister(
 		r.HTTPRequestsTotal,
 		r.HTTPRequestDuration,
@@ -144,6 +186,9 @@ func New(version, commit string) *Registry {
 		r.ICECandidates,
 		r.ICEServersIssued,
 		r.BuildInfo,
+		r.AuthLogins,
+		r.MagicLinks,
+		r.Pairings,
 	)
 
 	return r
@@ -242,6 +287,51 @@ func (r *Registry) ObserveICECandidate(candType, transport string) {
 // partitioned by whether TURN was included.
 func (r *Registry) ObserveICEServersIssued(turn bool) {
 	r.ICEServersIssued.WithLabelValues(strconv.FormatBool(turn)).Inc()
+}
+
+// Closed label sets for the auth counters. As with the signaling and ICE label
+// sets, anything outside the allowlist collapses to "other" so a caller bug
+// can never widen the label space.
+var (
+	validLoginMethods = map[string]struct{}{
+		"magic_link": {},
+		"google":     {},
+		"dev":        {},
+	}
+	validLoginResults = map[string]struct{}{
+		"success": {},
+		"failure": {},
+	}
+	validMagicLinkEvents = map[string]struct{}{
+		"issued":   {},
+		"consumed": {},
+	}
+	validPairingResults = map[string]struct{}{
+		"success": {},
+		"failure": {},
+	}
+)
+
+// ObserveLogin records one terminal login outcome. method is the login strategy
+// (magic_link/google/dev) and result is success or failure. Unrecognized values
+// collapse to "other" so a caller can never smuggle a value into a label.
+func (r *Registry) ObserveLogin(method, result string) {
+	r.AuthLogins.WithLabelValues(
+		sanitizeLabel(method, validLoginMethods),
+		sanitizeLabel(result, validLoginResults),
+	).Inc()
+}
+
+// ObserveMagicLink records one magic-link lifecycle event (issued/consumed).
+// Unrecognized values collapse to "other".
+func (r *Registry) ObserveMagicLink(event string) {
+	r.MagicLinks.WithLabelValues(sanitizeLabel(event, validMagicLinkEvents)).Inc()
+}
+
+// ObservePairing records one device-pairing claim outcome (success/failure).
+// Unrecognized values collapse to "other".
+func (r *Registry) ObservePairing(result string) {
+	r.Pairings.WithLabelValues(sanitizeLabel(result, validPairingResults)).Inc()
 }
 
 // Middleware returns an http.Handler middleware that records request count
