@@ -30,10 +30,20 @@ typedef struct {
     long value;
 } phase_entry_t;
 
-static void upcase(char *s) {
-    for (; *s != '\0'; ++s) {
-        *s = (char)toupper((unsigned char)*s);
+// Uppercase in place and drop underscores. The C names are snake_case
+// (PHASE_ON_HOOK) while the Go names are CamelCase with no separators
+// (PhaseOnHook). Collapsing both to underscore-free uppercase makes a
+// hypothetical two-word phase compare equal instead of spuriously failing
+// (ON_HOOK vs ONHOOK). Single-word phases are unaffected.
+static void normalize(char *s) {
+    char *w = s;
+    for (const char *r = s; *r != '\0'; ++r) {
+        if (*r == '_') {
+            continue;
+        }
+        *w++ = (char)toupper((unsigned char)*r);
     }
+    *w = '\0';
 }
 
 // Copy the next whitespace-delimited token from *p into out (bounded) and
@@ -95,7 +105,7 @@ static int parse_c_defines(const char *path, phase_entry_t *out) {
         }
         if (n < MAX_PHASES) {
             snprintf(out[n].name, sizeof(out[n].name), "%s", name_tok + 6);
-            upcase(out[n].name);
+            normalize(out[n].name);
             out[n].value = v;
             n++;
         }
@@ -104,8 +114,14 @@ static int parse_c_defines(const char *path, phase_entry_t *out) {
     return n;
 }
 
-// Parse `Phase<Name> uint8 = <value>` const lines. Returns the entry count, or
-// -1 if the file could not be opened.
+// Parse `Phase<Name> [uint8] = <value>` const lines. The type keyword is not
+// required: Go lets a const block declare the type on the first line only and
+// omit it on the rest, so keying on "uint8" would silently drop those phases
+// and the failure would misread as "Go has fewer phases". We instead match any
+// Phase<Uppercase> identifier assigned a byte literal. Bounding the value to
+// [0, 0xFF] (as the C parser does) keeps a stray non-phase numeric assignment
+// like `PhaseTimeout = 5000` from being mistaken for a phase. Returns the entry
+// count, or -1 if the file could not be opened.
 static int parse_go_consts(const char *path, phase_entry_t *out) {
     FILE *f = fopen(path, "r");
     if (f == NULL) {
@@ -120,9 +136,6 @@ static int parse_go_consts(const char *path, phase_entry_t *out) {
         }
         // Require Phase<Uppercase> so a bare "Phase" or a comment does not match.
         if (strncmp(p, "Phase", 5) != 0 || !isupper((unsigned char)p[5])) {
-            continue;
-        }
-        if (strstr(line, "uint8") == NULL) {
             continue;
         }
         const char *eq = strchr(p, '=');
@@ -141,12 +154,12 @@ static int parse_go_consts(const char *path, phase_entry_t *out) {
         }
         char *end = NULL;
         long v = strtol(val_tok, &end, 0);
-        if (end == val_tok) {
+        if (end == val_tok || v < 0 || v > 0xFF) {
             continue;
         }
         if (n < MAX_PHASES) {
             snprintf(out[n].name, sizeof(out[n].name), "%s", ident + 5);
-            upcase(out[n].name);
+            normalize(out[n].name);
             out[n].value = v;
             n++;
         }
