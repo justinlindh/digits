@@ -110,7 +110,7 @@ func TestSaveToBackupSuccess(t *testing.T) {
 	}
 
 	// SaveToBackup must NOT write the flag or operational file.
-	if _, ok := fs.files[wifiConfiguredFlag]; ok {
+	if _, ok := fs.files[ConfiguredFlagPath]; ok {
 		t.Error("wifi-configured flag must not be written by SaveToBackup")
 	}
 	opPath := filepath.Join(operationalDir, filename)
@@ -132,7 +132,7 @@ func TestSaveToBackupMissingSSID(t *testing.T) {
 	if !strings.Contains(err.Error(), "ssid") {
 		t.Errorf("error = %q, want mention of ssid", err.Error())
 	}
-	if _, ok := fs.files[wifiConfiguredFlag]; ok {
+	if _, ok := fs.files[ConfiguredFlagPath]; ok {
 		t.Error("flag must not be set on error")
 	}
 }
@@ -233,7 +233,7 @@ func TestCommitToOperationalSuccess(t *testing.T) {
 		t.Errorf("perm = %o, want 0600", op.perm)
 	}
 
-	flag, ok := fs.files[wifiConfiguredFlag]
+	flag, ok := fs.files[ConfiguredFlagPath]
 	if !ok {
 		t.Fatal("wifi-configured flag not written")
 	}
@@ -263,7 +263,7 @@ func TestCommitToOperationalRemountRWFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from failing remount rw")
 	}
-	if _, ok := fs.files[wifiConfiguredFlag]; ok {
+	if _, ok := fs.files[ConfiguredFlagPath]; ok {
 		t.Error("flag must not be set when remount rw fails")
 	}
 	if mnt.roCalls != 0 {
@@ -311,7 +311,7 @@ func TestCommitToOperationalWriteFailureOmitsFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from failing operational write")
 	}
-	if _, ok := base.files[wifiConfiguredFlag]; ok {
+	if _, ok := base.files[ConfiguredFlagPath]; ok {
 		t.Error("flag must not be set when operational write fails")
 	}
 	if mnt.roCalls != 1 {
