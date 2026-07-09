@@ -25,12 +25,33 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
 	"github.com/justinlindh/digits/server/internal/httputil"
 )
+
+// Limiter names identify the endpoint groups guarded by a limiter. They are the
+// label values on the rejection metric, so the same string must appear in the
+// metrics package's allowlist (metrics.ObserveRateLimitRejection). Sharing these
+// constants across both packages turns a rename into a compile error instead of
+// a silently mislabeled ("other") metric.
+const (
+	NameAuthMagic   = "auth_magic"
+	NameMagicVerify = "magic_verify"
+	NameGoogleLogin = "google_login"
+	NamePairing     = "pairing"
+	NameInvite      = "invite"
+	NameWS          = "ws"
+)
+
+// Names returns every limiter name, so the metrics allowlist can be built from
+// the same source the limiters are constructed from.
+func Names() []string {
+	return []string{NameAuthMagic, NameMagicVerify, NameGoogleLogin, NamePairing, NameInvite, NameWS}
+}
 
 // checker decides whether a single request from ip is within limit. It is the
 // swappable backend behind the shared HTTP plumbing in Limiter: an in-memory
@@ -183,6 +204,21 @@ end
 return current
 `)
 
+// redisCheckTimeout bounds a single limiter round-trip. The limiter sits on the
+// synchronous auth and WebSocket-upgrade paths, so a slow-but-reachable Redis
+// must degrade to fail-open rather than stall a login. This deadline is honored
+// only because the limiter's client is built with ContextTimeoutEnabled (see
+// signaling.NewRateLimitRedisClient); go-redis discards per-call deadlines by
+// default. The client's own read/write timeouts are a coarser backstop above
+// this value.
+const redisCheckTimeout = 300 * time.Millisecond
+
+// redisLogInterval throttles the fail-open warning. During a Redis outage every
+// guarded request errors, so an unthrottled log would flood exactly when an
+// operator is trying to read it. At most one line is emitted per interval; the
+// count swallowed in between rides along on the next emitted line.
+const redisLogInterval = 30 * time.Second
+
 // redisChecker is a fixed-window counter shared across replicas via Redis.
 type redisChecker struct {
 	client   redis.UniversalClient
@@ -190,6 +226,15 @@ type redisChecker struct {
 	keyBase  string
 	limit    int
 	windowMS int64
+
+	// now is time.Now in production; overridable in tests to drive the log
+	// throttle without sleeping.
+	now func() time.Time
+	// lastLogNanos is the wall-clock time of the last emitted warning, and
+	// suppressed counts occurrences swallowed since then. Both are touched from
+	// concurrent request goroutines, so they are atomic.
+	lastLogNanos atomic.Int64
+	suppressed   atomic.Int64
 }
 
 func newRedisChecker(client redis.UniversalClient, name string, limit int, window time.Duration) *redisChecker {
@@ -199,6 +244,7 @@ func newRedisChecker(client redis.UniversalClient, name string, limit int, windo
 		keyBase:  "ratelimit:" + name + ":",
 		limit:    limit,
 		windowMS: window.Milliseconds(),
+		now:      time.Now,
 	}
 }
 
@@ -213,12 +259,46 @@ func newRedisChecker(client redis.UniversalClient, name string, limit int, windo
 // legitimate users far more than the abuse the limiter guards against. Redis
 // outages are short and rare relative to the always-on auth surface they would
 // otherwise take down, so allowing traffic through for the duration is the
-// deliberate trade. The error is logged so an outage is still observable.
+// deliberate trade. A slow-but-reachable Redis is treated the same way: the call
+// is bounded by redisCheckTimeout so a stalling store fails open instead of
+// blocking the request. Errors are logged (throttled) so an outage stays
+// observable.
 func (c *redisChecker) allow(ctx context.Context, ip string) bool {
+	ctx, cancel := context.WithTimeout(ctx, redisCheckTimeout)
+	defer cancel()
 	n, err := incrExpireScript.Run(ctx, c.client, []string{c.keyBase + ip}, c.windowMS).Int64()
 	if err != nil {
-		slog.WarnContext(ctx, "ratelimit: redis check failed, allowing request", "limiter", c.name, "err", err)
+		c.logFailure(ctx, err)
 		return true
 	}
 	return n <= int64(c.limit)
+}
+
+// logFailure emits the fail-open warning at most once per redisLogInterval,
+// tagging each emitted line with the number of occurrences suppressed since the
+// previous one.
+func (c *redisChecker) logFailure(ctx context.Context, err error) {
+	if ok, suppressed := c.claimLog(); ok {
+		slog.WarnContext(ctx, "ratelimit: redis check failed, allowing request",
+			"limiter", c.name, "err", err, "suppressed", suppressed)
+	}
+}
+
+// claimLog reports whether a warning may be emitted now. The first failure and
+// the first failure after each redisLogInterval win the slot (returning the
+// count swallowed since the last emit); everything in between is counted and
+// returns false. The compare-and-swap makes at most one concurrent caller win a
+// given slot; losers fall through to the suppressed counter.
+func (c *redisChecker) claimLog() (ok bool, suppressed int64) {
+	now := c.now().UnixNano()
+	last := c.lastLogNanos.Load()
+	if last != 0 && now-last < redisLogInterval.Nanoseconds() {
+		c.suppressed.Add(1)
+		return false, 0
+	}
+	if !c.lastLogNanos.CompareAndSwap(last, now) {
+		c.suppressed.Add(1)
+		return false, 0
+	}
+	return true, c.suppressed.Swap(0)
 }

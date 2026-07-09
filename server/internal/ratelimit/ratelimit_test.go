@@ -3,6 +3,7 @@ package ratelimit
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -260,5 +261,103 @@ func TestRedisFailsOpenWhenUnreachable(t *testing.T) {
 		if !c.allow(context.Background(), "1.2.3.4") {
 			t.Fatalf("request %d should fail open (be allowed) when Redis is down", i+1)
 		}
+	}
+}
+
+// hangAfterHandshakeServer accepts connections, lets go-redis finish its RESP2
+// handshake (by rejecting HELLO), then never replies to the first real command.
+// It models a reachable-but-hung Redis on a warm connection. It returns the
+// listener address.
+func hangAfterHandshakeServer(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				buf := make([]byte, 4096)
+				// Read HELLO and reject it so the client falls back to RESP2
+				// with no further init traffic.
+				_, _ = conn.Read(buf)
+				_, _ = conn.Write([]byte("-ERR unknown command 'HELLO'\r\n"))
+				// Read the first real command and never reply.
+				_, _ = conn.Read(buf)
+				<-t.Context().Done()
+			}()
+		}
+	}()
+	t.Cleanup(func() { _ = ln.Close() })
+	return ln.Addr().String()
+}
+
+func TestRedisFailsOpenOnSlowRedis(t *testing.T) {
+	addr := hangAfterHandshakeServer(t)
+	// ContextTimeoutEnabled mirrors signaling.NewRateLimitRedisClient: without it
+	// go-redis discards the per-call deadline and the check would block on the
+	// read timeout instead of failing open. MaxRetries -1 avoids backoff.
+	client := redis.NewClient(&redis.Options{
+		Addr:                  addr,
+		MaxRetries:            -1,
+		ContextTimeoutEnabled: true,
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          5 * time.Second,
+	})
+	t.Cleanup(func() { _ = client.Close() })
+
+	c := newRedisChecker(client, "auth_magic", 1, time.Minute)
+
+	start := time.Now()
+	allowed := c.allow(context.Background(), "1.2.3.4")
+	elapsed := time.Since(start)
+
+	if !allowed {
+		t.Fatal("a hung Redis should fail open (be allowed)")
+	}
+	// The per-call redisCheckTimeout, not the 5s read timeout, must bound the
+	// call. Allow generous slack for CI scheduling.
+	if elapsed >= time.Second {
+		t.Fatalf("allow should return near redisCheckTimeout (%v), took %v", redisCheckTimeout, elapsed)
+	}
+}
+
+func TestRedisLogFailureThrottles(t *testing.T) {
+	c := newRedisChecker(newTestRedis(t), "auth_magic", 1, time.Minute)
+	base := time.Unix(1_000_000, 0)
+	cur := base
+	c.now = func() time.Time { return cur }
+
+	// The first failure logs immediately with nothing suppressed yet.
+	if ok, suppressed := c.claimLog(); !ok || suppressed != 0 {
+		t.Fatalf("first claim should log with 0 suppressed, got ok=%v suppressed=%d", ok, suppressed)
+	}
+	// Further failures inside the interval are swallowed and counted.
+	for i := range 5 {
+		if ok, _ := c.claimLog(); ok {
+			t.Fatalf("claim %d within interval should be suppressed", i)
+		}
+	}
+	// Once the interval elapses, the next failure logs and reports the count.
+	cur = base.Add(redisLogInterval + time.Second)
+	ok, suppressed := c.claimLog()
+	if !ok {
+		t.Fatal("claim after interval should log")
+	}
+	if suppressed != 5 {
+		t.Fatalf("expected 5 suppressed occurrences reported, got %d", suppressed)
+	}
+	// The counter resets after an emit: a fresh in-interval failure counts from 0.
+	if ok, _ := c.claimLog(); ok {
+		t.Fatal("claim right after an emit should be suppressed")
+	}
+	cur = cur.Add(redisLogInterval + time.Second)
+	if ok, suppressed := c.claimLog(); !ok || suppressed != 1 {
+		t.Fatalf("next emit should report the single suppressed occurrence, got ok=%v suppressed=%d", ok, suppressed)
 	}
 }

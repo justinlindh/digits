@@ -46,16 +46,6 @@ import (
 // releaseCacheTTL is the release index cache lifetime.
 const releaseCacheTTL = 5 * time.Minute
 
-// redisClient returns the shared Redis client from the bridge, or nil when
-// Redis is not configured. The rate limiters use nil to select their
-// per-process in-memory backend.
-func redisClient(b *signaling.RedisBridge) redis.UniversalClient {
-	if b == nil {
-		return nil
-	}
-	return b.Client()
-}
-
 func main() {
 	logging.Setup()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -129,6 +119,11 @@ func run(ctx context.Context) error {
 	// the hub publishes to a shared channel when a target device is not
 	// connected to this pod. Other pods subscribe and deliver locally.
 	var redisBridge *signaling.RedisBridge
+	// rateLimitRedis is a Redis client dedicated to the rate limiters, tuned for
+	// the hot path with its own connection pool so a stalled check cannot block
+	// or starve the bridge and state stores that share redisBridge's client. Nil
+	// when Redis is unconfigured, which selects the in-memory limiter backend.
+	var rateLimitRedis redis.UniversalClient
 	if cfg.RedisURL != "" {
 		var err error
 		redisBridge, err = signaling.NewRedisBridge(cfg.RedisURL)
@@ -142,6 +137,12 @@ func run(ctx context.Context) error {
 		hub.SetRedis(redisBridge)
 		go hub.Run(ctx)
 		slog.Info("redis pub/sub enabled for multi-replica signaling")
+
+		rateLimitRedis, err = signaling.NewRateLimitRedisClient(cfg.RedisURL)
+		if err != nil {
+			return fmt.Errorf("connect redis (rate limit): %w", err)
+		}
+		defer func() { _ = rateLimitRedis.Close() }()
 	}
 
 	tracker := calls.New(database.DB)
@@ -270,7 +271,7 @@ func run(ctx context.Context) error {
 		InviteStore:    household.NewInviteStore(database.DB),
 		Emailer:        emailSender,
 		Metrics:        mreg,
-		RedisClient:    redisClient(redisBridge),
+		RedisClient:    rateLimitRedis,
 	}, web.HandlerConfig{
 		BaseURL:           cfg.BaseURL,
 		AdminSecret:       cfg.AdminSecret,

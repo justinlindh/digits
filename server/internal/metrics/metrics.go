@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
 	"github.com/justinlindh/digits/server/internal/httputil"
+	"github.com/justinlindh/digits/server/internal/ratelimit"
 )
 
 const serviceName = "signald"
@@ -257,15 +258,17 @@ func (r *Registry) ObserveICEServersIssued(turn bool) {
 
 // validRateLimiters is the closed set of limiter names accepted by
 // ObserveRateLimitRejection. As with the other label sets, a value outside it
-// collapses to "other" so the label space can never be widened at runtime.
-var validRateLimiters = map[string]struct{}{
-	"auth_magic":   {},
-	"magic_verify": {},
-	"google_login": {},
-	"pairing":      {},
-	"invite":       {},
-	"ws":           {},
-}
+// collapses to "other" so the label space can never be widened at runtime. It is
+// built from ratelimit.Names so the allowlist and the limiters that feed it
+// cannot drift: a rename on either side is a compile error, not a mislabeled
+// metric.
+var validRateLimiters = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(ratelimit.Names()))
+	for _, name := range ratelimit.Names() {
+		m[name] = struct{}{}
+	}
+	return m
+}()
 
 // ObserveRateLimitRejection records one request rejected by a rate limiter,
 // partitioned by limiter name. Unknown names collapse to "other".

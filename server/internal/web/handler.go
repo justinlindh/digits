@@ -293,7 +293,9 @@ type Deps struct {
 	Metrics        *metrics.Registry
 	// RedisClient, when non-nil, backs the rate limiters with a shared counter
 	// so limits hold across replicas. Nil selects the per-process in-memory
-	// limiter, which is all dev and single-replica deployments need.
+	// limiter, which is all dev and single-replica deployments need. This is a
+	// client dedicated to rate limiting (see signaling.NewRateLimitRedisClient),
+	// tuned tighter than and pooled separately from the signaling bridge's.
 	RedisClient redis.UniversalClient
 }
 
@@ -467,12 +469,12 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		linkStore:                deps.LinkStore,
 		inviteStore:              deps.InviteStore,
 		emailer:                  deps.Emailer,
-		authLimiter:              newLimiter("auth_magic", 5),
-		magicVerifyLimiter:       newLimiter("magic_verify", 10),
-		googleLoginLimiter:       newLimiter("google_login", 10),
-		pairingLimiter:           newLimiter("pairing", 5),
-		inviteLimiter:            newLimiter("invite", 5),
-		wsLimiter:                newLimiter("ws", wsRateLimit(cfg)),
+		authLimiter:              newLimiter(ratelimit.NameAuthMagic, 5),
+		magicVerifyLimiter:       newLimiter(ratelimit.NameMagicVerify, 10),
+		googleLoginLimiter:       newLimiter(ratelimit.NameGoogleLogin, 10),
+		pairingLimiter:           newLimiter(ratelimit.NamePairing, 5),
+		inviteLimiter:            newLimiter(ratelimit.NameInvite, 5),
+		wsLimiter:                newLimiter(ratelimit.NameWS, wsRateLimit(cfg)),
 		metrics:                  deps.Metrics,
 	}, nil
 }
