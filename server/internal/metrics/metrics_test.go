@@ -288,6 +288,9 @@ func TestPromhttpExportsExpectedMetrics(t *testing.T) {
 	r.RegisterDevicesGauge(func() float64 { return 0 })
 	r.RegisterCallsGauge(func() float64 { return 0 })
 	r.ObserveSignalingError("turn_alloc_failed")
+	r.ObserveLogin("magic_link", "success")
+	r.ObserveMagicLink("issued")
+	r.ObservePairing("success")
 
 	srv := httptest.NewServer(promhttp.HandlerFor(r.Reg, promhttp.HandlerOpts{Registry: r.Reg}))
 	defer srv.Close()
@@ -306,6 +309,9 @@ func TestPromhttpExportsExpectedMetrics(t *testing.T) {
 		"digits_signald_active_calls_current",
 		"digits_signald_signaling_errors_total",
 		"digits_signald_build_info",
+		"digits_signald_auth_logins_total",
+		"digits_signald_auth_magic_links_total",
+		"digits_signald_auth_pairings_total",
 		"go_goroutines",
 		"process_open_fds",
 	} {
@@ -345,3 +351,81 @@ func readAll(t *testing.T, resp *http.Response) string {
 // compatible. If a future change swaps Registry's Reg field for a custom
 // type, this still has to compile.
 var _ prometheus.Registerer = (*prometheus.Registry)(nil)
+
+func TestObserveLogin(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveLogin("magic_link", "success")
+	r.ObserveLogin("magic_link", "success")
+	r.ObserveLogin("magic_link", "failure")
+	r.ObserveLogin("google", "success")
+	r.ObserveLogin("dev", "success")
+
+	if got := testutil.ToFloat64(r.AuthLogins.WithLabelValues("magic_link", "success")); got != 2 {
+		t.Errorf("magic_link/success = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(r.AuthLogins.WithLabelValues("magic_link", "failure")); got != 1 {
+		t.Errorf("magic_link/failure = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.AuthLogins.WithLabelValues("google", "success")); got != 1 {
+		t.Errorf("google/success = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.AuthLogins.WithLabelValues("dev", "success")); got != 1 {
+		t.Errorf("dev/success = %v, want 1", got)
+	}
+}
+
+// A login method or result outside the closed set must collapse to "other" so a
+// caller bug can never smuggle an email or other free-form string into a label.
+func TestObserveLoginUnknownCollapsesToOther(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveLogin("ada@example.com", "maybe")
+
+	if got := testutil.ToFloat64(r.AuthLogins.WithLabelValues("other", "other")); got != 1 {
+		t.Errorf("other/other = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.AuthLogins.WithLabelValues("ada@example.com", "maybe")); got != 0 {
+		t.Errorf("unknown login labels leaked: got %v, want 0", got)
+	}
+}
+
+func TestObserveMagicLink(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveMagicLink("issued")
+	r.ObserveMagicLink("issued")
+	r.ObserveMagicLink("consumed")
+	r.ObserveMagicLink("token-abc123") // unknown collapses to other
+
+	if got := testutil.ToFloat64(r.MagicLinks.WithLabelValues("issued")); got != 2 {
+		t.Errorf("issued = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(r.MagicLinks.WithLabelValues("consumed")); got != 1 {
+		t.Errorf("consumed = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.MagicLinks.WithLabelValues("other")); got != 1 {
+		t.Errorf("other = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.MagicLinks.WithLabelValues("token-abc123")); got != 0 {
+		t.Errorf("unknown event leaked into its own label: got %v, want 0", got)
+	}
+}
+
+func TestObservePairing(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObservePairing("success")
+	r.ObservePairing("failure")
+	r.ObservePairing("failure")
+	r.ObservePairing("482913") // an actual pairing code must never become a label
+
+	if got := testutil.ToFloat64(r.Pairings.WithLabelValues("success")); got != 1 {
+		t.Errorf("success = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.Pairings.WithLabelValues("failure")); got != 2 {
+		t.Errorf("failure = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(r.Pairings.WithLabelValues("other")); got != 1 {
+		t.Errorf("other = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.Pairings.WithLabelValues("482913")); got != 0 {
+		t.Errorf("pairing code leaked into its own label: got %v, want 0", got)
+	}
+}

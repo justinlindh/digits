@@ -234,7 +234,7 @@ func run(ctx context.Context) error {
 		slog.Warn("no SMTP configured, magic link emails will be logged only")
 	}
 
-	googleAuth := auth.NewGoogleAuth(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL, cfg.CookieDomain, authStore)
+	googleAuth := auth.NewGoogleAuth(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL, cfg.CookieDomain, authStore, mreg)
 	if googleAuth.Enabled() {
 		slog.Info("Google OAuth enabled")
 	}
@@ -246,7 +246,7 @@ func run(ctx context.Context) error {
 	if cfg.DevMode {
 		slog.Warn("dev mode enabled: magic link URLs will be logged to stdout")
 	}
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, cfg.BaseURL, cfg.CookieDomain, loginTmpl, cfg.DevMode)
+	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, cfg.BaseURL, cfg.CookieDomain, loginTmpl, cfg.DevMode, mreg)
 
 	// Periodic cleanup: sessions, magic links, expired pairing codes. Ticker
 	// goroutine is bound to the same ctx as the main server so shutdown is

@@ -143,13 +143,13 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
-	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
+	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore, nil)
 	emailSender := emailtest.NewSender()
 	loginTmpl, err := template.New("").Funcs(TemplateFuncs()).ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
+	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false, nil)
 
 	return Deps{
 		LineStore:      lineStore,

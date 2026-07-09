@@ -40,7 +40,12 @@ func securityHeadersMiddleware(baseURL string, next http.Handler) http.Handler {
 		wssOrigin = strings.Replace(wssOrigin, "http://", "ws://", 1)
 		connectSrc = "'self' " + wssOrigin
 	}
-	csp := fmt.Sprintf("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src %s; frame-ancestors 'none'", connectSrc)
+	// script-src is 'self' only: all JavaScript ships from /static/ files and
+	// runs via addEventListener / event delegation, never inline handlers or
+	// inline <script> bodies, so a reflected/stored XSS string can't execute.
+	// style-src keeps 'unsafe-inline' because the templates still rely on inline
+	// style attributes; styles are not a script-execution vector.
+	csp := fmt.Sprintf("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src %s; frame-ancestors 'none'", connectSrc)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", csp)
 		if r.TLS != nil {

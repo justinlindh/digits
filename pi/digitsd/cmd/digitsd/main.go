@@ -680,9 +680,24 @@ func reflashPico(sp *phone.SerialPort, serialDev string, serialLogger *slog.Logg
 		slog.Error("reflash: flash failed", "error", err, "reason", reason)
 	}
 	time.Sleep(2 * time.Second)
-	newSp, err := phone.OpenSerial(serialDev, 115200, serialLogger)
-	if err != nil {
-		log.Fatalf("reflash: serial re-open failed: %v", err)
+	// The 2s settle above is a guess; a freshly flashed Pico can take longer to
+	// re-enumerate /dev/serial0. Retry the reopen on a deadline instead of dying
+	// on the daemon: a transient reopen failure must not take the whole phone
+	// down. If it never comes back, fall through to the degraded no-Pico path
+	// (return the old, closed handle with ok=false) the same as a POST failure.
+	var newSp *phone.SerialPort
+	reopen := func() error {
+		p, openErr := phone.OpenSerial(serialDev, 115200, serialLogger)
+		if openErr != nil {
+			return openErr
+		}
+		newSp = p
+		return nil
+	}
+	if err := pollPing(reopen, 10*time.Second, 500*time.Millisecond); err != nil {
+		slog.Error("reflash: serial re-open failed after retries; continuing without Pico",
+			"error", err, "reason", reason)
+		return sp, false
 	}
 	// A virgin Pico needs to cold-boot the freshly written firmware before
 	// it can answer PING; flash-pico.sh's own sleeps don't always cover
@@ -2105,6 +2120,24 @@ func main() {
 	reconnected := make(chan *sigclient.Client, 1)
 	reconnecting := false
 
+	// UART link liveness. The main loop only reacts to arriving events, so a
+	// silently dead link (Pico wedged, no read error) would just stop
+	// delivering hook/key events with no signal. Ping the Pico on a timer and,
+	// on failure, ask the reader to reopen the port. PING blocks up to 2s
+	// holding the serial mutex, so run it off the select on its own goroutine
+	// and report the result back on a channel; livenessInFlight coalesces ticks
+	// so a slow PING cannot pile up overlapping probes.
+	const (
+		uartLivenessInterval = 30 * time.Second
+		uartHealthInterval   = 5 * time.Minute
+	)
+	livenessTicker := time.NewTicker(uartLivenessInterval)
+	defer livenessTicker.Stop()
+	healthTicker := time.NewTicker(uartHealthInterval)
+	defer healthTicker.Stop()
+	livenessResult := make(chan error, 1)
+	livenessInFlight := false
+
 	// Main select loop
 	for {
 		// During reconnect, sig points at the dead client whose Done() is
@@ -2369,6 +2402,38 @@ func main() {
 				slog.Info("pico: resyncing state after reboot")
 				resyncPicoState(sp, cfg.DeviceToken)
 			}
+
+		case <-livenessTicker.C:
+			// Probe the Pico. Skip if a prior probe is still outstanding so a
+			// hung PING does not spawn a backlog of goroutines.
+			if livenessInFlight {
+				break
+			}
+			livenessInFlight = true
+			go func() { livenessResult <- sp.Ping() }()
+
+		case err := <-livenessResult:
+			livenessInFlight = false
+			if err != nil {
+				slog.Error("uart liveness: PING failed, link may be dead; requesting reopen",
+					"error", err, "link_up", sp.LinkUp(), "reopens", sp.Reopens())
+				sp.RequestReopen()
+			} else if !sp.LinkUp() {
+				slog.Info("uart liveness: PING ok, link recovered")
+			}
+
+		case <-healthTicker.C:
+			// One periodic line so remote triage does not need a debugger:
+			// link state, reopen churn, dropped-line count, firmware version.
+			// fw_boot_* is the version captured at daemon startup (refreshed on
+			// reflash via fwVersionCh); it can lag the Pico's running firmware if
+			// it was reflashed out from under us without that channel firing.
+			slog.Info("uart health",
+				"link_up", sp.LinkUp(),
+				"reopens", sp.Reopens(),
+				"dropped_lines", sp.DroppedLines(),
+				"fw_boot_version", fwVersion,
+				"fw_boot_commit", fwCommit)
 
 		case msg := <-sig.Inbox():
 			cb.handleSignal(msg)

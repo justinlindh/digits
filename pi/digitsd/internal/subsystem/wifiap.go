@@ -55,10 +55,13 @@ func (w *WiFiAPModule) Init(ctx context.Context) error {
 }
 
 func (w *WiFiAPModule) initDirect() error {
-	env := os.Environ()
+	// apEnv is built once and only read afterwards, so every command can share
+	// it. os.Environ returns a fresh slice we own, so this single append is
+	// safe.
+	apEnv := append(os.Environ(), "LD_LIBRARY_PATH=/lib")
 	run := func(args ...string) error {
 		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Env = append(env[:len(env):len(env)], "LD_LIBRARY_PATH=/lib")
+		cmd.Env = apEnv
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
@@ -86,7 +89,7 @@ func (w *WiFiAPModule) initDirect() error {
 	}
 	time.Sleep(500 * time.Millisecond)
 	cmd := exec.Command(w.cfg.DnsmasqPath, "-C", dnsmasqConf)
-	cmd.Env = append(env[:len(env):len(env)], "LD_LIBRARY_PATH=/lib")
+	cmd.Env = apEnv
 	if out, err := cmd.CombinedOutput(); err != nil {
 		slog.Warn("subsystem wifi-ap: dnsmasq failed", "error", err, "output", string(out))
 		return fmt.Errorf("dnsmasq: %w", err)

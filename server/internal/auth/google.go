@@ -19,11 +19,13 @@ type GoogleAuth struct {
 	config       *oauth2.Config
 	store        *Store
 	cookieDomain string // optional, e.g. ".digits.family"
+	metrics      Metrics // may be nil
 }
 
 // NewGoogleAuth creates a GoogleAuth handler. Pass empty clientID/clientSecret to disable.
 // cookieDomain sets the session cookie Domain attribute (e.g. ".digits.family"); pass "" to omit.
-func NewGoogleAuth(clientID, clientSecret, redirectURL, cookieDomain string, store *Store) *GoogleAuth {
+// m may be nil, in which case auth metrics are not recorded.
+func NewGoogleAuth(clientID, clientSecret, redirectURL, cookieDomain string, store *Store, m Metrics) *GoogleAuth {
 	return &GoogleAuth{
 		config: &oauth2.Config{
 			ClientID:     clientID,
@@ -34,6 +36,14 @@ func NewGoogleAuth(clientID, clientSecret, redirectURL, cookieDomain string, sto
 		},
 		store:        store,
 		cookieDomain: cookieDomain,
+		metrics:      m,
+	}
+}
+
+// observeLogin guards the nil-metrics case so call sites stay a single line.
+func (g *GoogleAuth) observeLogin(result string) {
+	if g.metrics != nil {
+		g.metrics.ObserveLogin("google", result)
 	}
 }
 
@@ -73,6 +83,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Verify state
 	stateCookie, err := r.Cookie("oauth_state")
 	if err != nil {
+		g.observeLogin("failure")
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -83,6 +94,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		cookieVal = cookieVal[:idx]
 	}
 	if cookieVal != r.URL.Query().Get("state") {
+		g.observeLogin("failure")
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -111,6 +123,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	info, err := parseGoogleUserinfo(body)
 	switch {
 	case errors.Is(err, errUnverifiedEmail):
+		g.observeLogin("failure")
 		slog.WarnContext(r.Context(), "auth: google callback rejected unverified email", "google_id", info.ID)
 		http.Error(w, "Google account email is not verified", http.StatusForbidden)
 		return
@@ -163,6 +176,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
+	g.observeLogin("success")
 
 	setSessionCookie(w, g.cookieDomain, sessionToken, true)
 

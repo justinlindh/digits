@@ -29,7 +29,7 @@
         <div class="deck-card__num num">{{.Number}}</div>
         {{if and $.IsHostHousehold (not .IsHost) (not $.Resp.Ended)}}
           <button type="button" class="deck-card__kick"
-                  onclick="document.getElementById('deck-kick-confirm-{{.Number}}').showModal()">
+                  data-dialog-open="deck-kick-confirm-{{.Number}}">
             Remove
           </button>
         {{end}}
@@ -57,9 +57,9 @@
           </p>
           <div class="deck-confirm__actions">
             <button type="button" class="deck-confirm__cancel"
-                    onclick="document.getElementById('deck-kick-confirm-{{.Number}}').close()">Cancel</button>
+                    data-dialog-close>Cancel</button>
             <button type="submit" class="deck-confirm__go"
-                    onclick="document.getElementById('deck-kick-confirm-{{.Number}}').close()">Remove</button>
+                    data-dialog-close>Remove</button>
           </div>
         </form>
       </dialog>
@@ -72,31 +72,5 @@
   </p>
 </div>
 
-<script>
-  (function () {
-    var el = document.querySelector('.deck-duration');
-    if (!el) return;
-    var since = parseInt(el.getAttribute('data-duration-since'), 10);
-    if (!since) return;
-    function tick() {
-      if (!document.body.contains(el)) return;
-      var now = Date.now();
-      var s = Math.max(0, Math.floor((now - since) / 1000));
-      var h = Math.floor(s / 3600);
-      var m = Math.floor((s % 3600) / 60);
-      var sec = s % 60;
-      function pad(n) { return n < 10 ? '0' + n : String(n); }
-      el.textContent = (h > 0 ? h + ':' : '') + pad(m) + ':' + pad(sec);
-    }
-    tick();
-    var iv = setInterval(tick, 1000);
-
-    document.body.addEventListener('htmx:sseMessage', function (ev) {
-      if (ev.detail && (ev.detail.type === 'ended' || ev.detail.type === 'disconnect')) {
-        clearInterval(iv);
-        setTimeout(function () { location.reload(); }, 800);
-      }
-    });
-  })();
-</script>
+<script src="{{static "deck-live.js"}}" defer></script>
 {{end}}

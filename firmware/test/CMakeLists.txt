@@ -20,6 +20,7 @@ add_executable(fw_tests
     test_keypad.c
     test_uart_proto.c
     test_fsm.c
+    test_phase_sync.c
 
     # Fake SDK engine + fake modules.
     fakes/fake_env.c
@@ -35,6 +36,10 @@ add_executable(fw_tests
     ${SRC_DIR}/keypad.c
     ${SRC_DIR}/uart_proto.c
     ${SRC_DIR}/ringer.c
+    # Pure phase-to-LED mapping shared by main.c and phone_fsm.c. No hardware
+    # dependency, so the real source links directly and the FSM tests exercise
+    # the shipping mapping rather than a fake.
+    ${SRC_DIR}/led_phase.c
 )
 
 target_include_directories(fw_tests PRIVATE
@@ -49,6 +54,13 @@ target_include_directories(fw_tests PRIVATE
 # int64_t == long. The format strings are right for the firmware; suppress the
 # host-only mismatch rather than alter production code for the test build.
 target_compile_options(fw_tests PRIVATE -Wall -Wextra -Wno-format)
+
+# Absolute repo root, baked in at configure time. test_phase_sync.c uses it to
+# open firmware/src/phase.h and pi/digitsd/internal/phone/serial.go regardless
+# of the working directory the test binary is run from.
+target_compile_definitions(fw_tests PRIVATE
+    REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../.."
+)
 
 enable_testing()
 add_test(NAME fw_tests COMMAND fw_tests)

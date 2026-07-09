@@ -2,10 +2,11 @@
 
 {{define "content"}}
 <script src="{{static "voicemail-form.js"}}" defer></script>
+<script src="{{static "phone-detail.js"}}" defer></script>
 {{if and .User (eq .User.Theme "answering-machine")}}
   {{template "phone-detail-am" .}}
 {{else}}
-<div class="page">
+<div class="page" data-phone-number="{{.Line.Number}}">
 
   <div style="margin-bottom: 10px;">
     <a href="/" class="btn btn--quiet btn--sm" style="padding-left: 0;">← Overview</a>
@@ -22,19 +23,6 @@
       </span>
     </div>
     <p class="num muted" style="margin: 4px 0 0; font-size: 14px;">{{fmtPhone .Line.Number}}</p>
-    <script>
-    document.getElementById('status-badge').addEventListener('htmx:afterSwap', function(evt) {
-      var newOnline = evt.target.querySelector('[data-online]').getAttribute('data-online') === 'true';
-      var prev = this.dataset.prevOnline === 'true';
-      if (this.dataset.prevOnline !== undefined && newOnline !== prev) { location.reload(); return; }
-      this.dataset.prevOnline = newOnline;
-    });
-    (function() {
-      var badge = document.getElementById('status-badge');
-      var span = badge.querySelector('[data-online]');
-      if (span) badge.dataset.prevOnline = span.getAttribute('data-online');
-    })();
-    </script>
   </header>
 
   <div class="cols cols--side">
@@ -53,7 +41,7 @@
             <dd class="kv__val spread">
               <span class="num">{{fmtPhone .Line.Number}}</span>
               <button type="button" class="btn btn--quiet btn--sm"
-                      onclick="document.getElementById('line-editor').showModal()">Edit</button>
+                      data-dialog-open="line-editor">Edit</button>
             </dd>
           </div>
           {{template "name-section" .}}
@@ -80,7 +68,7 @@
         </dl>
         <div class="panel__body" style="padding-top: 12px;">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
-                onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
+                data-confirm-message="Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.">
             <button type="submit" class="btn btn--danger">Delete line</button>
           </form>
         </div>
@@ -147,7 +135,7 @@
     </div>
   </div>
 
-  <dialog id="line-editor" class="line-editor-dialog">
+  <dialog id="line-editor" class="line-editor-dialog"{{if .NumberError}} data-open-on-load{{end}}>
     <h2 class="line-editor-dialog__title">Edit line</h2>
     <div class="line-editor-dialog__body">
 
@@ -157,12 +145,12 @@
 
     <div class="seg-radio" style="margin-bottom: 16px;">
       <label class="seg-radio__opt">
-        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <input type="radio" name="line_edit_mode" value="number" checked data-line-edit-mode="number">
         <span class="seg-radio__label">Change number</span>
       </label>
       {{if .OtherLines}}
       <label class="seg-radio__opt">
-        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <input type="radio" name="line_edit_mode" value="move" data-line-edit-mode="move">
         <span class="seg-radio__label">Move to another line</span>
       </label>
       {{end}}
@@ -178,7 +166,7 @@
         </div>
         <div class="line-editor-dialog__actions">
           <button type="submit" class="btn btn--primary">Save</button>
-          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="button" class="btn" data-dialog-close>Cancel</button>
         </div>
       </form>
     </div>
@@ -186,7 +174,7 @@
     {{if .OtherLines}}
     <div id="line-edit-move" class="hidden">
       <form method="POST" action="/phones/{{.Line.Number}}/convert"
-            onsubmit="return confirm('Move this handset to the selected line?')">
+            data-confirm-message="Move this handset to the selected line?">
         {{if gt (len .Devices) 1}}
         <div class="field">
           <label for="move-device" class="field__label">Handset</label>
@@ -212,342 +200,20 @@
         </div>
         <div class="line-editor-dialog__actions">
           <button type="submit" class="btn btn--danger">Move handset</button>
-          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="button" class="btn" data-dialog-close>Cancel</button>
         </div>
       </form>
     </div>
     {{end}}
 
     </div>
-    <script>
-    function setLineEditMode(mode) {
-      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
-      var moveEl = document.getElementById('line-edit-move');
-      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
-    }
-    </script>
   </dialog>
 
-  {{if .NumberError}}
-  <script>document.getElementById('line-editor').showModal();</script>
-  {{end}}
 
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 
-  <script>
-  var phoneNumber = '{{$.Line.Number}}';
-  var piPollTimer = null;
-  var fwPollTimer = null;
-  var restartPollTimer = null;
-  var devModePollTimer = null;
-  var restartMode = null;
-
-  function selectedHardwareID() {
-    var p = document.getElementById('operator-panel');
-    return p ? (p.getAttribute('data-hardware-id') || '') : '';
-  }
-
-  function doRingTest() {
-    var btn = document.getElementById('ring-test-btn');
-    var status = document.getElementById('ring-test-status');
-    var spinner = document.getElementById('ring-test-spinner');
-    var text = document.getElementById('ring-test-text');
-    btn.disabled = true;
-    status.classList.remove('hidden');
-    spinner.classList.remove('hidden');
-    text.textContent = 'Ringing...';
-    text.style.color = 'var(--ink)';
-    var body = new URLSearchParams();
-    body.append('hardware_id', selectedHardwareID());
-    fetch('/phones/' + phoneNumber + '/ring-test', {
-      method: 'POST',
-      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: body.toString()
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      spinner.classList.add('hidden');
-      if (data.error) {
-        text.textContent = 'Failed: ' + data.error;
-        text.style.color = 'var(--rust)';
-        btn.disabled = false;
-      } else {
-        text.textContent = 'Done';
-        text.style.color = 'var(--forest)';
-        setTimeout(function() { status.classList.add('hidden'); btn.disabled = false; }, 2000);
-      }
-    })
-    .catch(function(err) {
-      spinner.classList.add('hidden');
-      text.textContent = 'Error: ' + err.message;
-      text.style.color = 'var(--rust)';
-      btn.disabled = false;
-    });
-  }
-
-  function triggerComponentUpdate(prefix, paramName) {
-    var btn = document.getElementById(prefix + '-install-btn');
-    var radio = document.querySelector('input[name="' + paramName + '"]:checked');
-    var body = new URLSearchParams();
-    if (radio) body.append(paramName, radio.value);
-    body.append('hardware_id', selectedHardwareID());
-    startUpdate(prefix, btn, body);
-  }
-
-  function startUpdate(prefix, btn, body) {
-    var progress = document.getElementById(prefix + '-update-progress');
-    var progressText = document.getElementById(prefix + '-progress-text');
-    if (btn) { btn.disabled = true; btn.classList.add('is-disabled'); }
-    if (progress) progress.classList.remove('hidden');
-    if (progressText) progressText.textContent = 'Sending update command...';
-
-    fetch('/phones/' + phoneNumber + '/update', {
-      method: 'POST',
-      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: body.toString()
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) { showResult(prefix, 'failed', 'Failed to send: ' + data.error); return; }
-      if (progressText) progressText.textContent = 'Update triggered: waiting for device...';
-      startPolling(prefix);
-    })
-    .catch(function(err) { showResult(prefix, 'failed', 'Network error: ' + err.message); });
-  }
-
-  function startPolling(prefix) {
-    var timerVar = prefix === 'pi' ? 'piPollTimer' : 'fwPollTimer';
-    if (window[timerVar]) clearInterval(window[timerVar]);
-    var attempts = 0;
-    window[timerVar] = setInterval(function() {
-      attempts++;
-      if (attempts > 120) { clearInterval(window[timerVar]); showResult(prefix, 'failed', 'Timed out; please retry'); return; }
-      fetch('/phones/' + phoneNumber + '/update-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (!data.status) return;
-        var progressText = document.getElementById(prefix + '-progress-text');
-        switch (data.status) {
-          case 'downloading': if (progressText) progressText.textContent = 'Downloading update... ' + (data.detail || ''); break;
-          case 'applying':    if (progressText) progressText.textContent = 'Applying update... ' + (data.detail || ''); break;
-          case 'rebooting':   if (progressText) progressText.textContent = 'Rebooting device...'; break;
-          case 'success':     clearInterval(window[timerVar]); showResult(prefix, 'success', data.detail || 'Update installed successfully'); setTimeout(function() { location.reload(); }, 2000); break;
-          case 'up_to_date':  clearInterval(window[timerVar]); showResult(prefix, 'success', data.detail || 'Already up to date'); break;
-          case 'failed':      clearInterval(window[timerVar]); showResult(prefix, 'failed', data.detail || 'Update failed'); break;
-        }
-      }).catch(function() {});
-    }, 1000);
-  }
-
-  function showResult(prefix, type, message) {
-    var progress = document.getElementById(prefix + '-update-progress');
-    var spinner = document.getElementById(prefix + '-progress-spinner');
-    var progressText = document.getElementById(prefix + '-progress-text');
-    var btn = document.getElementById(prefix + '-install-btn');
-    if (spinner) spinner.classList.add('hidden');
-    if (progress) progress.classList.remove('hidden');
-    if (progressText) {
-      progressText.textContent = message;
-      progressText.style.color = (type === 'success') ? 'var(--forest)' : 'var(--rust)';
-    }
-    if (type !== 'success' && btn) { btn.disabled = false; }
-  }
-
-  function showRestartConfirm(mode) {
-    restartMode = mode;
-    document.getElementById('restart-buttons').classList.add('hidden');
-    var c = document.getElementById('restart-confirm');
-    c.classList.remove('hidden');
-    var text = document.getElementById('restart-confirm-text');
-    var btn = document.getElementById('restart-confirm-btn');
-    if (mode === 'reboot') {
-      text.textContent = 'Reboot the entire device? This will take about 30 seconds.';
-      btn.className = 'btn btn--danger';
-    } else {
-      text.textContent = 'Restart the service on this device? It will reconnect in a few seconds.';
-      btn.className = 'btn btn--primary';
-    }
-  }
-  function cancelRestartConfirm() {
-    restartMode = null;
-    document.getElementById('restart-confirm').classList.add('hidden');
-    document.getElementById('restart-buttons').classList.remove('hidden');
-  }
-  function doRestart() {
-    var mode = restartMode;
-    document.getElementById('restart-confirm').classList.add('hidden');
-    document.getElementById('restart-progress').classList.remove('hidden');
-    var status = document.getElementById('restart-status');
-    status.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
-    status.style.color = 'var(--ink)';
-    document.getElementById('restart-spinner').classList.remove('hidden');
-    var body = new URLSearchParams({mode: mode});
-    body.append('hardware_id', selectedHardwareID());
-    fetch('/phones/' + phoneNumber + '/restart', {
-      method: 'POST',
-      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: body.toString()
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) { showRestartResult('failed', 'Failed: ' + data.error); return; }
-      var maxAttempts = mode === 'reboot' ? 90 : 15;
-      status.textContent = mode === 'reboot' ? 'Rebooting device...' : 'Restarting service...';
-      pollOnline(maxAttempts);
-    })
-    .catch(function(err) { showRestartResult('failed', 'Network error: ' + err.message); });
-  }
-  function pollOnline(maxAttempts) {
-    if (restartPollTimer) clearInterval(restartPollTimer);
-    var attempts = 0;
-    var sawOffline = false;
-    setTimeout(function() {
-      restartPollTimer = setInterval(function() {
-        attempts++;
-        if (attempts > maxAttempts) { clearInterval(restartPollTimer); showRestartResult('failed', 'Timed out waiting for device to come back online'); return; }
-        fetch('/phones/' + phoneNumber + '/online?hardware_id=' + encodeURIComponent(selectedHardwareID()))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (!data.online) { sawOffline = true; document.getElementById('restart-status').textContent = 'Waiting for device to reconnect...'; }
-          else if (sawOffline) { clearInterval(restartPollTimer); showRestartResult('success', 'Device is back online'); setTimeout(function() { location.reload(); }, 1500); }
-        }).catch(function() {});
-      }, 1000);
-    }, 2000);
-  }
-  function showRestartResult(t, msg) {
-    document.getElementById('restart-spinner').classList.add('hidden');
-    var status = document.getElementById('restart-status');
-    status.textContent = msg;
-    status.style.color = (t === 'success') ? 'var(--forest)' : 'var(--rust)';
-  }
-
-  function showFactoryResetConfirm() {
-    document.getElementById('factory-reset-default').classList.add('hidden');
-    document.getElementById('factory-reset-confirm').classList.remove('hidden');
-  }
-  function cancelFactoryReset() {
-    document.getElementById('factory-reset-confirm').classList.add('hidden');
-    document.getElementById('factory-reset-default').classList.remove('hidden');
-  }
-  function doFactoryReset() {
-    document.getElementById('factory-reset-confirm').classList.add('hidden');
-    document.getElementById('factory-reset-progress').classList.remove('hidden');
-    var frBody = new URLSearchParams();
-    frBody.append('hardware_id', selectedHardwareID());
-    fetch('/phones/' + phoneNumber + '/factory-reset', {
-      method: 'POST',
-      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: frBody.toString()
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var spinner = document.getElementById('factory-reset-spinner');
-      var text = document.getElementById('factory-reset-text');
-      spinner.classList.add('hidden');
-      if (data.error) { text.textContent = 'Failed: ' + data.error; text.style.color = 'var(--rust)'; }
-      else { text.textContent = 'Device is rebooting into recovery mode. Connect to the Digits-Recovery Wi-Fi network to continue.'; text.style.color = 'var(--ochre)'; }
-    })
-    .catch(function(err) {
-      var spinner = document.getElementById('factory-reset-spinner');
-      var text = document.getElementById('factory-reset-text');
-      spinner.classList.add('hidden');
-      text.textContent = 'Error: ' + err.message;
-      text.style.color = 'var(--rust)';
-    });
-  }
-
-  function showDevModeEnableForm() {
-    document.getElementById('devmode-off-default').classList.add('hidden');
-    document.getElementById('devmode-enable-form').classList.remove('hidden');
-    document.getElementById('devmode-password').focus();
-  }
-  function cancelDevModeEnable() {
-    document.getElementById('devmode-enable-form').classList.add('hidden');
-    document.getElementById('devmode-off-default').classList.remove('hidden');
-    clearDevModePwError();
-  }
-  function clearDevModePwError() {
-    document.getElementById('devmode-pw-error').classList.add('hidden');
-  }
-  function showDevModeDisableConfirm() {
-    document.getElementById('devmode-on-default').classList.add('hidden');
-    document.getElementById('devmode-disable-confirm').classList.remove('hidden');
-  }
-  function cancelDevModeDisable() {
-    document.getElementById('devmode-disable-confirm').classList.add('hidden');
-    document.getElementById('devmode-on-default').classList.remove('hidden');
-  }
-  function devModeProgress(msg) {
-    var p = document.getElementById('devmode-progress');
-    if (p) p.classList.remove('hidden');
-    var t = document.getElementById('devmode-text');
-    if (t) { t.textContent = msg; t.style.color = 'var(--ink)'; }
-  }
-  function devModeError(msg) {
-    var spinner = document.getElementById('devmode-spinner');
-    if (spinner) spinner.classList.add('hidden');
-    var t = document.getElementById('devmode-text');
-    if (t) { t.textContent = msg; t.style.color = 'var(--rust)'; }
-  }
-  function doDevModeEnable() {
-    var pw = document.getElementById('devmode-password').value;
-    if (pw.length < 8 || pw.length > 72) {
-      document.getElementById('devmode-pw-error').classList.remove('hidden');
-      document.getElementById('devmode-password').focus();
-      return;
-    }
-    document.getElementById('devmode-enable-form').classList.add('hidden');
-    devModeProgress('Enabling developer mode...');
-    var body = new URLSearchParams({enabled: 'true', password: pw});
-    sendDevMode(body, true);
-  }
-  function doDevModeDisable() {
-    document.getElementById('devmode-disable-confirm').classList.add('hidden');
-    devModeProgress('Disabling developer mode...');
-    sendDevMode(new URLSearchParams({enabled: 'false'}), false);
-  }
-  function sendDevMode(body, target) {
-    body.append('hardware_id', selectedHardwareID());
-    fetch('/phones/' + phoneNumber + '/dev-mode', {
-      method: 'POST',
-      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: body.toString()
-    })
-    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
-    .then(function(res) {
-      if (!res.ok) { devModeError('Failed: ' + (res.data.error || 'request rejected')); return; }
-      devModeProgress(target ? 'Waiting for device to enable SSH...' : 'Waiting for device to disable SSH...');
-      pollDevMode(target);
-    })
-    .catch(function(err) { devModeError('Network error: ' + err.message); });
-  }
-  function pollDevMode(target) {
-    if (devModePollTimer) clearInterval(devModePollTimer);
-    var attempts = 0;
-    devModePollTimer = setInterval(function() {
-      attempts++;
-      if (attempts > 15) { clearInterval(devModePollTimer); devModeError('Timed out waiting for the device to apply the change.'); return; }
-      fetch('/phones/' + phoneNumber + '/dev-mode-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d.enabled === target) {
-          clearInterval(devModePollTimer);
-          devModeProgress('Done. Reloading...');
-          setTimeout(function() { location.reload(); }, 1000);
-        }
-      }).catch(function() {});
-    }, 2000);
-  }
-
-  window.addEventListener('pagehide', function() {
-    if (piPollTimer) clearInterval(piPollTimer);
-    if (fwPollTimer) clearInterval(fwPollTimer);
-    if (restartPollTimer) clearInterval(restartPollTimer);
-    if (devModePollTimer) clearInterval(devModePollTimer);
-  });
-  </script>
 
 </div>
 {{end}}
@@ -589,7 +255,7 @@
     <label class="checkbox-row">
       <input type="checkbox" name="silent_mode" value="on"
              {{if .Line.Settings.SilentMode}}checked{{end}}
-             onchange="this.form.requestSubmit()">
+             data-autosubmit>
       <span class="checkbox-row__label">Silent mode</span>
     </label>
     <p class="muted" style="font-size: 12px; margin: 4px 0 0;">
@@ -608,7 +274,7 @@
     <label class="checkbox-row">
       <input type="checkbox" name="auto_update" value="on"
              {{if .Line.Settings.AutoUpdate}}checked{{end}}
-             onchange="this.form.requestSubmit()">
+             data-autosubmit>
       <span class="checkbox-row__label">Automatic updates</span>
     </label>
     <p class="muted" style="font-size: 12px; margin: 4px 0 0;">
@@ -862,7 +528,7 @@
     <label class="am-settings__dip" aria-label="Silent mode">
       <input type="checkbox" name="silent_mode" value="on"
              {{if .Line.Settings.SilentMode}}checked{{end}}
-             onchange="this.form.requestSubmit()"
+             data-autosubmit
              class="am-settings__dip-input">
       <span class="am-settings__dip-body" aria-hidden="true">
         <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
@@ -889,7 +555,7 @@
     <label class="am-settings__dip" aria-label="Automatic updates">
       <input type="checkbox" name="auto_update" value="on"
              {{if .Line.Settings.AutoUpdate}}checked{{end}}
-             onchange="this.form.requestSubmit()"
+             data-autosubmit
              class="am-settings__dip-input">
       <span class="am-settings__dip-body" aria-hidden="true">
         <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
@@ -977,7 +643,7 @@
 {{end}}
 
 {{define "phone-detail-am"}}
-<div class="am-handset">
+<div class="am-handset" data-phone-number="{{.Line.Number}}">
 
   <a href="/" class="am-tab am-handset__back" aria-label="Back to overview">&larr; Overview</a>
 
@@ -1001,19 +667,6 @@
     </div>
   </div>
 
-  <script>
-  document.getElementById('status-badge').addEventListener('htmx:afterSwap', function(evt) {
-    var newOnline = evt.target.querySelector('[data-online]').getAttribute('data-online') === 'true';
-    var prev = this.dataset.prevOnline === 'true';
-    if (this.dataset.prevOnline !== undefined && newOnline !== prev) { location.reload(); return; }
-    this.dataset.prevOnline = newOnline;
-  });
-  (function() {
-    var badge = document.getElementById('status-badge');
-    var span = badge.querySelector('[data-online]');
-    if (span) badge.dataset.prevOnline = span.getAttribute('data-online');
-  })();
-  </script>
 
   <section class="am-plate am-handset__hero">
     <span class="am-plate__label">Handset</span>
@@ -1036,7 +689,7 @@
           <dd class="am-settings__kv-val">
             <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0;">{{fmtPhone .Line.Number}}</span>
             <button type="button" class="am-tab"
-                    onclick="document.getElementById('line-editor').showModal()">Edit</button>
+                    data-dialog-open="line-editor">Edit</button>
           </dd>
         </div>
         {{template "am-name-section" .}}
@@ -1135,7 +788,7 @@
         <form class="am-handset__action-form"
               method="POST"
               action="/phones/{{.Line.Number}}/delete"
-              onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
+              data-confirm-message="Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.">
           <button type="submit" class="am-key am-key--red">
             <span class="am-key__symbol">&#x2716;</span>
             <span class="am-key__label">Delete line</span>
@@ -1146,7 +799,7 @@
 
   </div>
 
-  <dialog id="line-editor" class="line-editor-dialog">
+  <dialog id="line-editor" class="line-editor-dialog"{{if .NumberError}} data-open-on-load{{end}}>
     <h2 class="line-editor-dialog__title">Edit line</h2>
     <div class="line-editor-dialog__body">
 
@@ -1156,12 +809,12 @@
 
     <div class="seg-radio" style="margin-bottom: 16px;">
       <label class="seg-radio__opt">
-        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <input type="radio" name="line_edit_mode" value="number" checked data-line-edit-mode="number">
         <span class="seg-radio__label">Change number</span>
       </label>
       {{if .OtherLines}}
       <label class="seg-radio__opt">
-        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <input type="radio" name="line_edit_mode" value="move" data-line-edit-mode="move">
         <span class="seg-radio__label">Move to another line</span>
       </label>
       {{end}}
@@ -1176,7 +829,7 @@
         </div>
         <div class="line-editor-dialog__actions">
           <button type="submit" class="am-tab">Save</button>
-          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="button" class="am-tab" data-dialog-close>Cancel</button>
         </div>
       </form>
     </div>
@@ -1184,7 +837,7 @@
     {{if .OtherLines}}
     <div id="line-edit-move" class="hidden">
       <form method="POST" action="/phones/{{.Line.Number}}/convert"
-            onsubmit="return confirm('Move this handset to the selected line?')">
+            data-confirm-message="Move this handset to the selected line?">
         {{if gt (len .Devices) 1}}
         <div class="field">
           <label for="move-device" class="am-label">Handset</label>
@@ -1213,366 +866,16 @@
             <span class="am-key__symbol">&#x25B6;</span>
             <span class="am-key__label">Move handset</span>
           </button>
-          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="button" class="am-tab" data-dialog-close>Cancel</button>
         </div>
       </form>
     </div>
     {{end}}
 
     </div>
-    <script>
-    function setLineEditMode(mode) {
-      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
-      var moveEl = document.getElementById('line-edit-move');
-      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
-    }
-    </script>
   </dialog>
 
-  {{if .NumberError}}
-  <script>document.getElementById('line-editor').showModal();</script>
-  {{end}}
 
-  <script>
-  (function() {
-    var phoneNumber = {{.Line.Number}};
-    var pollers = {pi: null, fw: null};
-
-    function selectedHardwareID() {
-      var p = document.getElementById('operator-panel');
-      return p ? (p.getAttribute('data-hardware-id') || '') : '';
-    }
-
-    window.amTriggerComponentUpdate = function(prefix, paramName) {
-      var btn = document.getElementById(prefix + '-install-btn');
-      var radio = document.querySelector('input[name="' + paramName + '"]:checked');
-      var body = new URLSearchParams();
-      if (radio) body.append(paramName, radio.value);
-      body.append('hardware_id', selectedHardwareID());
-      amStartUpdate(prefix, btn, body);
-    };
-
-    function amStartUpdate(prefix, btn, body) {
-      var progress = document.getElementById(prefix + '-update-progress');
-      var lamp = document.getElementById(prefix + '-progress-lamp');
-      var text = document.getElementById(prefix + '-progress-text');
-      if (btn) btn.disabled = true;
-      if (progress) progress.classList.remove('hidden');
-      if (lamp) { lamp.classList.remove('am-lamp--on-green', 'am-lamp--on-red'); lamp.classList.add('am-lamp--on-amber'); }
-      if (text) { text.classList.remove('am-led--green', 'am-led--red', 'am-led--dim'); text.textContent = 'Sending update command'; }
-
-      fetch('/phones/' + phoneNumber + '/update', {
-        method: 'POST',
-        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-        body: body.toString()
-      })
-      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function(data) {
-        if (data.error) { amShowResult(prefix, 'failed', 'Failed: ' + data.error); return; }
-        if (text) text.textContent = 'Triggered, awaiting handset';
-        amStartPolling(prefix);
-      })
-      .catch(function(err) { amShowResult(prefix, 'failed', 'Network error: ' + err.message); });
-    }
-
-    function amStartPolling(prefix) {
-      if (pollers[prefix]) clearInterval(pollers[prefix]);
-      var attempts = 0;
-      pollers[prefix] = setInterval(function() {
-        attempts++;
-        if (attempts > 120) { clearInterval(pollers[prefix]); amShowResult(prefix, 'failed', 'Timed out, please retry'); return; }
-        fetch('/phones/' + phoneNumber + '/update-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
-        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(function(data) {
-          if (!data.status) return;
-          var text = document.getElementById(prefix + '-progress-text');
-          switch (data.status) {
-            case 'downloading': if (text) text.textContent = ('Downloading ' + (data.detail || '')).trim(); break;
-            case 'applying':    if (text) text.textContent = ('Applying ' + (data.detail || '')).trim(); break;
-            case 'rebooting':   if (text) text.textContent = 'Rebooting handset'; break;
-            case 'success':     clearInterval(pollers[prefix]); amShowResult(prefix, 'success', data.detail || 'Update installed'); setTimeout(function(){ location.reload(); }, 2000); break;
-            case 'up_to_date':  clearInterval(pollers[prefix]); amShowResult(prefix, 'success', data.detail || 'Already up to date'); break;
-            case 'failed':      clearInterval(pollers[prefix]); amShowResult(prefix, 'failed', data.detail || 'Update failed'); break;
-          }
-        }).catch(function(){});
-      }, 1000);
-    }
-
-    function amShowResult(prefix, kind, message) {
-      var lamp = document.getElementById(prefix + '-progress-lamp');
-      var text = document.getElementById(prefix + '-progress-text');
-      var btn = document.getElementById(prefix + '-install-btn');
-      if (lamp) {
-        lamp.classList.remove('am-lamp--on-amber', 'am-lamp--on-green', 'am-lamp--on-red');
-        lamp.classList.add(kind === 'success' ? 'am-lamp--on-green' : 'am-lamp--on-red');
-      }
-      if (text) {
-        text.classList.remove('am-led--green', 'am-led--red');
-        text.classList.add(kind === 'success' ? 'am-led--green' : 'am-led--red');
-        text.textContent = message;
-      }
-      if (kind !== 'success' && btn) btn.disabled = false;
-    }
-
-    window.amDoRingTest = function() {
-      var btn = document.getElementById('am-ring-test-btn');
-      var status = document.getElementById('am-ring-test-status');
-      var lamp = document.getElementById('am-ring-test-lamp');
-      var text = document.getElementById('am-ring-test-text');
-      btn.disabled = true;
-      status.classList.remove('hidden');
-      lamp.classList.remove('am-lamp--on-green', 'am-lamp--on-red');
-      lamp.classList.add('am-lamp--on-amber');
-      text.classList.remove('am-led--green', 'am-led--red');
-      text.textContent = 'Ringing...';
-      var rtBody = new URLSearchParams();
-      rtBody.append('hardware_id', selectedHardwareID());
-      fetch('/phones/' + phoneNumber + '/ring-test', {
-        method: 'POST',
-        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-        body: rtBody.toString()
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.error) {
-          lamp.classList.remove('am-lamp--on-amber');
-          lamp.classList.add('am-lamp--on-red');
-          text.classList.add('am-led--red');
-          text.textContent = 'Failed: ' + data.error;
-          btn.disabled = false;
-        } else {
-          lamp.classList.remove('am-lamp--on-amber');
-          lamp.classList.add('am-lamp--on-green');
-          text.classList.add('am-led--green');
-          text.textContent = 'Done';
-          setTimeout(function() { status.classList.add('hidden'); btn.disabled = false; }, 2000);
-        }
-      })
-      .catch(function(err) {
-        lamp.classList.remove('am-lamp--on-amber');
-        lamp.classList.add('am-lamp--on-red');
-        text.classList.add('am-led--red');
-        text.textContent = 'Error: ' + err.message;
-        btn.disabled = false;
-      });
-    };
-
-    var amRestartMode = null;
-    var amRestartPollTimer = null;
-    var amDevModePollTimer = null;
-
-    window.amShowRestartConfirm = function(mode) {
-      amRestartMode = mode;
-      document.getElementById('am-ctrl-buttons').classList.add('hidden');
-      var c = document.getElementById('am-restart-confirm');
-      c.classList.remove('hidden');
-      var text = document.getElementById('am-restart-confirm-text');
-      if (mode === 'reboot') {
-        text.textContent = 'Reboot the entire device? This will take about 30 seconds.';
-      } else {
-        text.textContent = 'Restart the service on this device? It will reconnect in a few seconds.';
-      }
-    };
-
-    window.amCancelRestartConfirm = function() {
-      amRestartMode = null;
-      document.getElementById('am-restart-confirm').classList.add('hidden');
-      document.getElementById('am-ctrl-buttons').classList.remove('hidden');
-    };
-
-    window.amDoRestart = function() {
-      var mode = amRestartMode;
-      document.getElementById('am-restart-confirm').classList.add('hidden');
-      var progress = document.getElementById('am-restart-progress');
-      var lamp = document.getElementById('am-restart-lamp');
-      var text = document.getElementById('am-restart-text');
-      progress.classList.remove('hidden');
-      lamp.classList.remove('am-lamp--on-green', 'am-lamp--on-red');
-      lamp.classList.add('am-lamp--on-amber');
-      text.classList.remove('am-led--green', 'am-led--red');
-      text.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
-      var body = new URLSearchParams({mode: mode});
-      body.append('hardware_id', selectedHardwareID());
-      fetch('/phones/' + phoneNumber + '/restart', {
-        method: 'POST',
-        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-        body: body.toString()
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.error) { amShowRestartResult('failed', 'Failed: ' + data.error); return; }
-        var maxAttempts = mode === 'reboot' ? 90 : 15;
-        text.textContent = mode === 'reboot' ? 'Rebooting device...' : 'Restarting service...';
-        amPollOnline(maxAttempts);
-      })
-      .catch(function(err) { amShowRestartResult('failed', 'Network error: ' + err.message); });
-    };
-
-    function amPollOnline(maxAttempts) {
-      if (amRestartPollTimer) clearInterval(amRestartPollTimer);
-      var attempts = 0;
-      var sawOffline = false;
-      setTimeout(function() {
-        amRestartPollTimer = setInterval(function() {
-          attempts++;
-          if (attempts > maxAttempts) { clearInterval(amRestartPollTimer); amShowRestartResult('failed', 'Timed out waiting for device to come back online'); return; }
-          fetch('/phones/' + phoneNumber + '/online?hardware_id=' + encodeURIComponent(selectedHardwareID()))
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (!data.online) { sawOffline = true; document.getElementById('am-restart-text').textContent = 'Waiting for device to reconnect...'; }
-            else if (sawOffline) { clearInterval(amRestartPollTimer); amShowRestartResult('success', 'Device is back online'); setTimeout(function() { location.reload(); }, 1500); }
-          }).catch(function() {});
-        }, 1000);
-      }, 2000);
-    }
-
-    function amShowRestartResult(kind, msg) {
-      var lamp = document.getElementById('am-restart-lamp');
-      var text = document.getElementById('am-restart-text');
-      lamp.classList.remove('am-lamp--on-amber', 'am-lamp--on-green', 'am-lamp--on-red');
-      lamp.classList.add(kind === 'success' ? 'am-lamp--on-green' : 'am-lamp--on-red');
-      text.classList.remove('am-led--green', 'am-led--red');
-      text.classList.add(kind === 'success' ? 'am-led--green' : 'am-led--red');
-      text.textContent = msg;
-    }
-
-    window.amShowRecoveryConfirm = function() {
-      document.getElementById('am-recovery-default').classList.add('hidden');
-      document.getElementById('am-recovery-confirm').classList.remove('hidden');
-    };
-
-    window.amCancelRecovery = function() {
-      document.getElementById('am-recovery-confirm').classList.add('hidden');
-      document.getElementById('am-recovery-default').classList.remove('hidden');
-    };
-
-    window.amDoRecovery = function() {
-      document.getElementById('am-recovery-confirm').classList.add('hidden');
-      var progress = document.getElementById('am-recovery-progress');
-      var lamp = document.getElementById('am-recovery-lamp');
-      var text = document.getElementById('am-recovery-text');
-      progress.classList.remove('hidden');
-      var frBody = new URLSearchParams();
-      frBody.append('hardware_id', selectedHardwareID());
-      fetch('/phones/' + phoneNumber + '/factory-reset', {
-        method: 'POST',
-        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-        body: frBody.toString()
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        lamp.classList.remove('am-lamp--on-amber');
-        if (data.error) {
-          lamp.classList.add('am-lamp--on-red');
-          text.classList.add('am-led--red');
-          text.textContent = 'Failed: ' + data.error;
-        } else {
-          lamp.classList.add('am-lamp--on-amber');
-          text.textContent = 'Device is rebooting into recovery mode. Connect to the Digits-Recovery Wi-Fi network to continue.';
-        }
-      })
-      .catch(function(err) {
-        lamp.classList.remove('am-lamp--on-amber');
-        lamp.classList.add('am-lamp--on-red');
-        text.classList.add('am-led--red');
-        text.textContent = 'Error: ' + err.message;
-      });
-    };
-
-    window.amShowDevModeEnable = function() {
-      document.getElementById('am-devmode-off-default').classList.add('hidden');
-      document.getElementById('am-devmode-enable-form').classList.remove('hidden');
-      document.getElementById('am-devmode-password').focus();
-    };
-    window.amCancelDevModeEnable = function() {
-      document.getElementById('am-devmode-enable-form').classList.add('hidden');
-      document.getElementById('am-devmode-off-default').classList.remove('hidden');
-      amClearDevModePwError();
-    };
-    window.amClearDevModePwError = function() {
-      document.getElementById('am-devmode-pw-error').classList.add('hidden');
-    };
-    window.amShowDevModeDisable = function() {
-      document.getElementById('am-devmode-on-default').classList.add('hidden');
-      document.getElementById('am-devmode-disable-confirm').classList.remove('hidden');
-    };
-    window.amCancelDevModeDisable = function() {
-      document.getElementById('am-devmode-disable-confirm').classList.add('hidden');
-      document.getElementById('am-devmode-on-default').classList.remove('hidden');
-    };
-    function amDevModeProgress(msg) {
-      document.getElementById('am-devmode-progress').classList.remove('hidden');
-      var lamp = document.getElementById('am-devmode-lamp');
-      lamp.classList.remove('am-lamp--on-red');
-      lamp.classList.add('am-lamp--on-amber');
-      var t = document.getElementById('am-devmode-text');
-      t.classList.remove('am-led--red');
-      t.textContent = msg;
-    }
-    function amDevModeError(msg) {
-      var lamp = document.getElementById('am-devmode-lamp');
-      lamp.classList.remove('am-lamp--on-amber');
-      lamp.classList.add('am-lamp--on-red');
-      var t = document.getElementById('am-devmode-text');
-      t.classList.add('am-led--red');
-      t.textContent = msg;
-    }
-    window.amDoDevModeEnable = function() {
-      var pw = document.getElementById('am-devmode-password').value;
-      if (pw.length < 8 || pw.length > 72) {
-        document.getElementById('am-devmode-pw-error').classList.remove('hidden');
-        document.getElementById('am-devmode-password').focus();
-        return;
-      }
-      document.getElementById('am-devmode-enable-form').classList.add('hidden');
-      amDevModeProgress('Enabling developer mode...');
-      amSendDevMode(new URLSearchParams({enabled: 'true', password: pw}), true);
-    };
-    window.amDoDevModeDisable = function() {
-      document.getElementById('am-devmode-disable-confirm').classList.add('hidden');
-      amDevModeProgress('Disabling developer mode...');
-      amSendDevMode(new URLSearchParams({enabled: 'false'}), false);
-    };
-    function amSendDevMode(body, target) {
-      body.append('hardware_id', selectedHardwareID());
-      fetch('/phones/' + phoneNumber + '/dev-mode', {
-        method: 'POST',
-        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
-        body: body.toString()
-      })
-      .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
-      .then(function(res) {
-        if (!res.ok) { amDevModeError('Failed: ' + (res.data.error || 'request rejected')); return; }
-        amDevModeProgress(target ? 'Waiting for device to enable SSH...' : 'Waiting for device to disable SSH...');
-        amPollDevMode(target);
-      })
-      .catch(function(err) { amDevModeError('Network error: ' + err.message); });
-    }
-    function amPollDevMode(target) {
-      if (amDevModePollTimer) clearInterval(amDevModePollTimer);
-      var attempts = 0;
-      amDevModePollTimer = setInterval(function() {
-        attempts++;
-        if (attempts > 15) { clearInterval(amDevModePollTimer); amDevModeError('Timed out waiting for the device to apply the change.'); return; }
-        fetch('/phones/' + phoneNumber + '/dev-mode-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          if (d.enabled === target) {
-            clearInterval(amDevModePollTimer);
-            amDevModeProgress('Done. Reloading...');
-            setTimeout(function() { location.reload(); }, 1000);
-          }
-        }).catch(function() {});
-      }, 2000);
-    }
-
-    window.addEventListener('pagehide', function() {
-      if (amRestartPollTimer) clearInterval(amRestartPollTimer);
-      if (amDevModePollTimer) clearInterval(amDevModePollTimer);
-      Object.keys(pollers).forEach(function(p) { if (pollers[p]) clearInterval(pollers[p]); });
-    });
-  })();
-  </script>
 
   {{template "page-footer" .}}
 
@@ -1649,7 +952,7 @@
           <div class="am-update__actions">
             {{if .PiReleases}}
               {{$canInstall := and .LatestPiVersion (or (not .DeviceInfo.PiVersion) (ne .DeviceInfo.PiVersion .LatestPiVersion))}}
-              <button type="button" id="pi-install-btn" class="am-key {{if $canInstall}}am-key--accent{{end}} am-update__install" onclick="amTriggerComponentUpdate('pi', 'target_pi_version')">
+              <button type="button" id="pi-install-btn" class="am-key {{if $canInstall}}am-key--accent{{end}} am-update__install" data-op="am-update" data-prefix="pi" data-param="target_pi_version">
                 <span class="am-key__symbol">&#x25B6;</span>
                 <span class="am-key__label">Install</span>
               </button>
@@ -1709,7 +1012,7 @@
           <div class="am-update__actions">
             {{if .FWReleases}}
               {{$canInstall := and .LatestFirmwareVersion (or (not .DeviceInfo.FirmwareVersion) (ne .DeviceInfo.FirmwareVersion .LatestFirmwareVersion))}}
-              <button type="button" id="fw-install-btn" class="am-key {{if $canInstall}}am-key--accent{{end}} am-update__install" onclick="amTriggerComponentUpdate('fw', 'target_fw_version')">
+              <button type="button" id="fw-install-btn" class="am-key {{if $canInstall}}am-key--accent{{end}} am-update__install" data-op="am-update" data-prefix="fw" data-param="target_fw_version">
                 <span class="am-key__symbol">&#x25B6;</span>
                 <span class="am-key__label">Install</span>
               </button>
@@ -1887,7 +1190,7 @@
             </label>
             {{end}}
           </div>
-          <button type="button" id="pi-install-btn" onclick="triggerComponentUpdate('pi', 'target_pi_version')" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install Pi software</button>
+          <button type="button" id="pi-install-btn" data-op="update" data-prefix="pi" data-param="target_pi_version" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install Pi software</button>
           <div id="pi-update-progress" class="hidden" style="margin-top: 10px;">
             <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
               <div id="pi-progress-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
@@ -1924,7 +1227,7 @@
             </label>
             {{end}}
           </div>
-          <button type="button" id="fw-install-btn" onclick="triggerComponentUpdate('fw', 'target_fw_version')" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install firmware</button>
+          <button type="button" id="fw-install-btn" data-op="update" data-prefix="fw" data-param="target_fw_version" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install firmware</button>
           <div id="fw-update-progress" class="hidden" style="margin-top: 10px;">
             <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
               <div id="fw-progress-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
@@ -1963,9 +1266,9 @@
     <div class="panel__body">
 
       <div id="restart-buttons" class="hstack hstack--wrap" style="gap: 8px;">
-        <button type="button" id="ring-test-btn" onclick="doRingTest()" class="btn">Ring test</button>
-        <button type="button" onclick="showRestartConfirm('service')" class="btn">Restart service</button>
-        <button type="button" onclick="showRestartConfirm('reboot')" class="btn">Reboot device</button>
+        <button type="button" id="ring-test-btn" data-op="ring-test" class="btn">Ring test</button>
+        <button type="button" data-op="restart-confirm" data-mode="service" class="btn">Restart service</button>
+        <button type="button" data-op="restart-confirm" data-mode="reboot" class="btn">Reboot device</button>
       </div>
 
       <div id="ring-test-status" class="hidden" style="margin-bottom: 10px;">
@@ -1978,8 +1281,8 @@
       <div id="restart-confirm" class="hidden">
         <p id="restart-confirm-text" style="font-size: 13.5px; color: var(--ink); margin: 0 0 10px;"></p>
         <div class="hstack" style="gap: 8px;">
-          <button type="button" id="restart-confirm-btn" onclick="doRestart()" class="btn btn--primary">Confirm</button>
-          <button type="button" onclick="cancelRestartConfirm()" class="btn">Cancel</button>
+          <button type="button" id="restart-confirm-btn" data-op="restart-do" class="btn btn--primary">Confirm</button>
+          <button type="button" data-op="restart-cancel" class="btn">Cancel</button>
         </div>
       </div>
 
@@ -1993,14 +1296,14 @@
       <!-- Recovery mode -->
       <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
         <div id="factory-reset-default">
-          <button type="button" onclick="showFactoryResetConfirm()" class="btn btn--danger">Recovery mode</button>
+          <button type="button" data-op="factory-show" class="btn btn--danger">Recovery mode</button>
           <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
         </div>
         <div id="factory-reset-confirm" class="hidden">
           <p style="font-size: 13.5px; color: var(--ink); margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
           <div class="hstack" style="gap: 8px;">
-            <button type="button" onclick="doFactoryReset()" class="btn btn--danger">Confirm</button>
-            <button type="button" onclick="cancelFactoryReset()" class="btn">Cancel</button>
+            <button type="button" data-op="factory-do" class="btn btn--danger">Confirm</button>
+            <button type="button" data-op="factory-cancel" class="btn">Cancel</button>
           </div>
         </div>
         <div id="factory-reset-progress" class="hidden">
@@ -2016,29 +1319,29 @@
       <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
         {{if and .DeviceInfo .DeviceInfo.DevMode}}
         <div id="devmode-on-default">
-          <button type="button" onclick="showDevModeDisableConfirm()" class="btn btn--danger">Disable developer mode</button>
+          <button type="button" data-op="devmode-disable-show" class="btn btn--danger">Disable developer mode</button>
           <p class="muted" style="font-size: 12px; margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code class="num">{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
         </div>
         <div id="devmode-disable-confirm" class="hidden">
           <p style="font-size: 13.5px; color: var(--ink); margin: 8px 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
           <div class="hstack" style="gap: 8px;">
-            <button type="button" onclick="doDevModeDisable()" class="btn btn--danger">Confirm</button>
-            <button type="button" onclick="cancelDevModeDisable()" class="btn">Cancel</button>
+            <button type="button" data-op="devmode-disable-do" class="btn btn--danger">Confirm</button>
+            <button type="button" data-op="devmode-disable-cancel" class="btn">Cancel</button>
           </div>
         </div>
         {{else}}
         <div id="devmode-off-default">
-          <button type="button" onclick="showDevModeEnableForm()" class="btn">Enable developer mode</button>
+          <button type="button" data-op="devmode-enable-show" class="btn">Enable developer mode</button>
           <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
         </div>
         <div id="devmode-enable-form" class="hidden">
           <label for="devmode-password" class="field__label" style="display: block; margin: 8px 0 4px;">SSH password</label>
-          <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" maxlength="72" aria-describedby="devmode-pw-hint devmode-pw-error" oninput="clearDevModePwError()" style="max-width: 280px;" placeholder="At least 8 characters">
+          <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" maxlength="72" aria-describedby="devmode-pw-hint devmode-pw-error" style="max-width: 280px;" placeholder="At least 8 characters">
           <span id="devmode-pw-hint" class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
           <span id="devmode-pw-error" class="hidden" style="display: block; font-size: 11px; margin-top: 4px; color: var(--rust);">Password must be 8 to 72 characters.</span>
           <div class="hstack" style="gap: 8px; margin-top: 10px;">
-            <button type="button" onclick="doDevModeEnable()" class="btn btn--primary">Enable</button>
-            <button type="button" onclick="cancelDevModeEnable()" class="btn">Cancel</button>
+            <button type="button" data-op="devmode-enable-do" class="btn btn--primary">Enable</button>
+            <button type="button" data-op="devmode-enable-cancel" class="btn">Cancel</button>
           </div>
         </div>
         {{end}}
@@ -2067,15 +1370,15 @@
   <section class="am-plate am-handset__plate am-handset__plate--wide">
     <span class="am-plate__label">Device controls</span>
     <div id="am-ctrl-buttons" class="am-handset__actions-row" style="gap: 8px; flex-wrap: wrap;">
-      <button type="button" id="am-ring-test-btn" onclick="amDoRingTest()" class="am-key">
+      <button type="button" id="am-ring-test-btn" data-op="am-ring-test" class="am-key">
         <span class="am-key__symbol">&#x266A;</span>
         <span class="am-key__label">Ring test</span>
       </button>
-      <button type="button" onclick="amShowRestartConfirm('service')" class="am-key">
+      <button type="button" data-op="am-restart-confirm" data-mode="service" class="am-key">
         <span class="am-key__symbol">&#x21BB;</span>
         <span class="am-key__label">Restart service</span>
       </button>
-      <button type="button" onclick="amShowRestartConfirm('reboot')" class="am-key">
+      <button type="button" data-op="am-restart-confirm" data-mode="reboot" class="am-key">
         <span class="am-key__symbol">&#x23FB;</span>
         <span class="am-key__label">Reboot device</span>
       </button>
@@ -2089,11 +1392,11 @@
     <div id="am-restart-confirm" class="hidden" style="margin-top: 10px;">
       <p id="am-restart-confirm-text" class="am-hint" style="margin: 0 0 10px;"></p>
       <div class="am-handset__actions-row" style="gap: 8px;">
-        <button type="button" id="am-restart-confirm-btn" onclick="amDoRestart()" class="am-key am-key--accent">
+        <button type="button" id="am-restart-confirm-btn" data-op="am-restart-do" class="am-key am-key--accent">
           <span class="am-key__symbol">&#x2713;</span>
           <span class="am-key__label">Confirm</span>
         </button>
-        <button type="button" onclick="amCancelRestartConfirm()" class="am-key">
+        <button type="button" data-op="am-restart-cancel" class="am-key">
           <span class="am-key__symbol">&#x2715;</span>
           <span class="am-key__label">Cancel</span>
         </button>
@@ -2107,7 +1410,7 @@
     </div>
     <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
       <div id="am-recovery-default">
-        <button type="button" onclick="amShowRecoveryConfirm()" class="am-key am-key--red">
+        <button type="button" data-op="am-recovery-show" class="am-key am-key--red">
           <span class="am-key__symbol">&#x26A0;</span>
           <span class="am-key__label">Recovery mode</span>
         </button>
@@ -2116,11 +1419,11 @@
       <div id="am-recovery-confirm" class="hidden">
         <p class="am-hint" style="margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
         <div class="am-handset__actions-row" style="gap: 8px;">
-          <button type="button" onclick="amDoRecovery()" class="am-key am-key--red">
+          <button type="button" data-op="am-recovery-do" class="am-key am-key--red">
             <span class="am-key__symbol">&#x2713;</span>
             <span class="am-key__label">Confirm</span>
           </button>
-          <button type="button" onclick="amCancelRecovery()" class="am-key">
+          <button type="button" data-op="am-recovery-cancel" class="am-key">
             <span class="am-key__symbol">&#x2715;</span>
             <span class="am-key__label">Cancel</span>
           </button>
@@ -2140,7 +1443,7 @@
     <span class="am-plate__label">Developer mode</span>
     {{if and .DeviceInfo .DeviceInfo.DevMode}}
     <div id="am-devmode-on-default">
-      <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
+      <button type="button" data-op="am-devmode-disable-show" class="am-key am-key--red">
         <span class="am-key__symbol">&#x26D4;</span>
         <span class="am-key__label">Disable dev mode</span>
       </button>
@@ -2149,11 +1452,11 @@
     <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
       <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
       <div class="am-handset__actions-row" style="gap: 8px;">
-        <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
+        <button type="button" data-op="am-devmode-disable-do" class="am-key am-key--red">
           <span class="am-key__symbol">&#x2713;</span>
           <span class="am-key__label">Confirm</span>
         </button>
-        <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
+        <button type="button" data-op="am-devmode-disable-cancel" class="am-key">
           <span class="am-key__symbol">&#x2715;</span>
           <span class="am-key__label">Cancel</span>
         </button>
@@ -2161,7 +1464,7 @@
     </div>
     {{else}}
     <div id="am-devmode-off-default">
-      <button type="button" onclick="amShowDevModeEnable()" class="am-key">
+      <button type="button" data-op="am-devmode-enable-show" class="am-key">
         <span class="am-key__symbol">&#x1F527;</span>
         <span class="am-key__label">Enable dev mode</span>
       </button>
@@ -2169,14 +1472,14 @@
     </div>
     <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
       <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
-      <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+      <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
       <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
       <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
-        <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
+        <button type="button" data-op="am-devmode-enable-do" class="am-key am-key--accent">
           <span class="am-key__symbol">&#x2713;</span>
           <span class="am-key__label">Enable</span>
         </button>
-        <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
+        <button type="button" data-op="am-devmode-enable-cancel" class="am-key">
           <span class="am-key__symbol">&#x2715;</span>
           <span class="am-key__label">Cancel</span>
         </button>

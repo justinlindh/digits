@@ -130,7 +130,7 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 	}
 	if isHTMX(r) {
 		data := h.buildLinesData(r, hh)
-		renderWith(r.Context(), w, h.tmplDashboard, partialFor(r, "dnd-response", "dnd-response-am"), data)
+		renderWith(r.Context(), w, h.tmplDashboard, "dnd-response", data)
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)

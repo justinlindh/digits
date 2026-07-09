@@ -24,6 +24,7 @@ add_executable(digits
     src/hook.c
     src/keypad.c
     src/led.c
+    src/led_phase.c
     src/phase.c
     src/ringer.c
     src/uart_proto.c

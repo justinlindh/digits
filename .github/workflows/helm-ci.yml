@@ -18,12 +18,21 @@ concurrency:
 
 jobs:
   lint-and-template:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
 
       - uses: azure/setup-helm@v5
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/kubeconform.tar.gz" \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  $RUNNER_TEMP/kubeconform.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/kubeconform-bin"
+          tar -xzf "$RUNNER_TEMP/kubeconform.tar.gz" -C "$RUNNER_TEMP/kubeconform-bin" kubeconform
+          echo "$RUNNER_TEMP/kubeconform-bin" >> "$GITHUB_PATH"
 
       - name: Lint (defaults)
         run: helm lint charts/digits/
@@ -40,7 +49,7 @@ jobs:
             --set observability.serviceMonitor.enabled=true
 
       - name: Template (defaults)
-        run: helm template digits charts/digits/ --namespace digits
+        run: helm template digits charts/digits/ --namespace digits > "$RUNNER_TEMP/rendered-defaults.yaml"
 
       - name: Template (all features enabled)
         run: |
@@ -57,4 +66,13 @@ jobs:
             --set observability.enabled=true \
             --set observability.otelEndpoint=otel:4317 \
             --set observability.pyroscopeEndpoint=http://pyroscope:4040 \
-            --set observability.serviceMonitor.enabled=true
+            --set observability.serviceMonitor.enabled=true \
+            > "$RUNNER_TEMP/rendered-all.yaml"
+
+      # -skip names the exact CRD-backed kinds with no upstream JSON schema (CNPG Cluster, Prometheus
+      # operator PodMonitor/ServiceMonitor). Scoping the skip rather than -ignore-missing-schemas means a
+      # typo'd core kind, or an unreachable schema host, fails the step instead of being silently passed over.
+      - name: Validate rendered manifests (kubeconform)
+        run: |
+          kubeconform -strict -summary -skip Cluster,PodMonitor,ServiceMonitor \
+            "$RUNNER_TEMP/rendered-defaults.yaml" "$RUNNER_TEMP/rendered-all.yaml"

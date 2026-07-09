@@ -18,7 +18,7 @@ import (
 // nil-pointer panics instead of clean assertions.
 
 func TestGoogleAuth_HandleLogin_SetsStateCookie(t *testing.T) {
-	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil)
+	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/login", nil)
 	w := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestGoogleAuth_HandleLogin_SetsStateCookie(t *testing.T) {
 }
 
 func TestGoogleAuth_HandleCallback_MissingStateCookie(t *testing.T) {
-	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil)
+	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=abc&code=xyz", nil)
 	w := httptest.NewRecorder()
@@ -66,7 +66,7 @@ func TestGoogleAuth_HandleCallback_MissingStateCookie(t *testing.T) {
 }
 
 func TestGoogleAuth_HandleCallback_StateMismatch(t *testing.T) {
-	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil)
+	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=abc&code=xyz", nil)
 	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "different-state"})
