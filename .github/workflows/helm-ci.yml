@@ -69,8 +69,10 @@ jobs:
             --set observability.serviceMonitor.enabled=true \
             > "$RUNNER_TEMP/rendered-all.yaml"
 
-      # -ignore-missing-schemas skips CRD-backed kinds (CNPG, ServiceMonitor) that have no upstream JSON schema.
+      # -skip names the exact CRD-backed kinds with no upstream JSON schema (CNPG Cluster, Prometheus
+      # operator PodMonitor/ServiceMonitor). Scoping the skip rather than -ignore-missing-schemas means a
+      # typo'd core kind, or an unreachable schema host, fails the step instead of being silently passed over.
       - name: Validate rendered manifests (kubeconform)
         run: |
-          kubeconform -strict -summary -ignore-missing-schemas \
+          kubeconform -strict -summary -skip Cluster,PodMonitor,ServiceMonitor \
             "$RUNNER_TEMP/rendered-defaults.yaml" "$RUNNER_TEMP/rendered-all.yaml"

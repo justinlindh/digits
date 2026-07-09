@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.1'
-          # Deliberate: the self-hosted runner image ships a persistent local Go cache, so actions/cache traffic is pure waste.
+          # Self-hosted runners carry a persistent local Go cache, so actions/cache traffic is pure waste; the ubuntu-latest fallback (forks, homelab pool disabled) forgoes Go caching by design.
           cache: false
       - name: Install C dependencies
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libopus-dev libopusfile-dev
