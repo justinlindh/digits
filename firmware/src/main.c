@@ -2,16 +2,30 @@
 #include <stdio.h>
 
 #include "hardware/gpio.h"
+#include "hardware/watchdog.h"
 #include "pico/stdlib.h"
 
 #include "board.h"
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
+#include "led_phase.h"
 #include "phase.h"
 #include "phone_fsm.h"
 #include "ringer.h"
 #include "uart_proto.h"
+
+// Hardware watchdog timeout. The main loop feeds the watchdog every ~10ms
+// iteration; if the firmware hangs, the chip resets within this window so the
+// Pi can recover the phone without a physical power cycle. Sizing: the longest
+// blocking work reachable from the loop is a phase_write flash sector erase
+// plus page program (phase.c), which the W25Q16JV datasheet bounds at ~400ms
+// worst case with interrupts disabled. The RP2040 watchdog counts in hardware
+// independent of the CPU, so that erase must fit inside a single feed interval;
+// 1000ms leaves roughly 2.5x margin over it. Everything else in the loop (USB
+// console poll, hook poll, keypad scan, LED/ringer updates) is non-blocking or
+// bounded by microsecond sleeps.
+#define WATCHDOG_TIMEOUT_MS 1000
 
 // Drive both candidate UART_TX pins high so the Pi sees a clean idle line
 // during the boot window. We don't know which is the real one until
@@ -80,22 +94,7 @@ int main(void) {
     keypad_init();
     led_init();
 
-    switch (phase_read()) {
-    case PHASE_PAIRED:
-        led_set_mode(LED_MODE_BREATHING);
-        break;
-    case PHASE_UNPAIRED:
-        led_set_mode(LED_MODE_SLOW_PULSE);
-        break;
-    case PHASE_SETUP:
-        led_set_mode(LED_MODE_DOUBLE_PULSE);
-        break;
-    case PHASE_RECOVERY:
-        led_set_mode(LED_MODE_FAST_BLINK);
-        break;
-    default:
-        break;
-    }
+    led_set_mode(phase_idle_led_mode(phase_read()));
 
     ringer_init();
     uart_proto_init();
@@ -115,7 +114,14 @@ int main(void) {
         uart_proto_send("BOOT:PANIC");
     }
 
+    // Arm the hardware watchdog now that init (including any star-at-boot flash
+    // write above) is done. pause_on_debug=true so a halted SWD session during
+    // OTA reflash does not spuriously reset the chip.
+    watchdog_enable(WATCHDOG_TIMEOUT_MS, true);
+
     while (true) {
+        watchdog_update();
+
         if (!banner_printed && stdio_usb_connected()) {
             printf("\n===========================\n");
             printf(" Digits Firmware %s (%s)\n", FIRMWARE_VERSION, FIRMWARE_COMMIT);

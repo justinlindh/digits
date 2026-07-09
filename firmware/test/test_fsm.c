@@ -214,7 +214,9 @@ static void test_fsm_hangup_returns_to_idle(void) {
     set_hook(false);  // cradle
     run_for_ms(100);
     CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_IDLE);
-    CHECK_EQ(fake_led_mode(), LED_MODE_OFF);
+    // fsm_reset_idle leaves the phase PAIRED, whose idle indicator is the
+    // breathing ambient pattern (see phase_idle_led_mode / docs/user-guide.md).
+    CHECK_EQ(fake_led_mode(), LED_MODE_BREATHING);
 }
 
 static void test_fsm_ring_then_offhook_connects(void) {
@@ -282,6 +284,13 @@ static void test_fsm_idle_led_follows_phase(void) {
     send_cmd("STATE:SET:SETUP");
     run_for_ms(20);
     CHECK_EQ(fake_led_mode(), LED_MODE_DOUBLE_PULSE);
+
+    // PAIRED idles on the breathing pattern, not OFF. This is the mapping that
+    // previously drifted between main.c and phone_fsm.c.
+    fake_phase_set(PHASE_PAIRED);
+    send_cmd("STATE:SET:PAIRED");
+    run_for_ms(20);
+    CHECK_EQ(fake_led_mode(), LED_MODE_BREATHING);
 }
 
 static void test_fsm_state_set_writes_phase_and_acks(void) {

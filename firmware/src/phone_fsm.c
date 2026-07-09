@@ -14,6 +14,7 @@
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
+#include "led_phase.h"
 #include "phase.h"
 #include "ringer.h"
 #include "uart_proto.h"
@@ -27,12 +28,8 @@ static void fsm_led_set(led_mode_t mode) {
         return;
     }
     if (mode == LED_MODE_OFF) {
-        switch (phase_read()) {
-        case PHASE_UNPAIRED: led_set_mode(LED_MODE_SLOW_PULSE); return;
-        case PHASE_SETUP:    led_set_mode(LED_MODE_DOUBLE_PULSE); return;
-        case PHASE_RECOVERY: led_set_mode(LED_MODE_FAST_BLINK); return;
-        default: break;
-        }
+        led_set_mode(phase_idle_led_mode(phase_read()));
+        return;
     }
     led_set_mode(mode);
 }
