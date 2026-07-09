@@ -62,8 +62,7 @@
   (function () {
     if (!document.getElementById('ring-test-btn')) return;
 
-    var piPollTimer = null;
-    var fwPollTimer = null;
+    var pollers = { pi: null, fw: null };
     var restartPollTimer = null;
     var devModePollTimer = null;
     var restartMode = null;
@@ -129,12 +128,11 @@
     }
 
     function startPolling(prefix) {
-      var timerVar = prefix === 'pi' ? 'piPollTimer' : 'fwPollTimer';
-      if (window[timerVar]) clearInterval(window[timerVar]);
+      if (pollers[prefix]) clearInterval(pollers[prefix]);
       var attempts = 0;
-      window[timerVar] = setInterval(function () {
+      pollers[prefix] = setInterval(function () {
         attempts++;
-        if (attempts > 120) { clearInterval(window[timerVar]); showResult(prefix, 'failed', 'Timed out; please retry'); return; }
+        if (attempts > 120) { clearInterval(pollers[prefix]); showResult(prefix, 'failed', 'Timed out; please retry'); return; }
         fetch('/phones/' + phoneNumber() + '/update-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
           .then(function (r) { return r.json(); })
           .then(function (data) {
@@ -144,9 +142,9 @@
               case 'downloading': if (progressText) progressText.textContent = 'Downloading update... ' + (data.detail || ''); break;
               case 'applying': if (progressText) progressText.textContent = 'Applying update... ' + (data.detail || ''); break;
               case 'rebooting': if (progressText) progressText.textContent = 'Rebooting device...'; break;
-              case 'success': clearInterval(window[timerVar]); showResult(prefix, 'success', data.detail || 'Update installed successfully'); setTimeout(function () { location.reload(); }, 2000); break;
-              case 'up_to_date': clearInterval(window[timerVar]); showResult(prefix, 'success', data.detail || 'Already up to date'); break;
-              case 'failed': clearInterval(window[timerVar]); showResult(prefix, 'failed', data.detail || 'Update failed'); break;
+              case 'success': clearInterval(pollers[prefix]); showResult(prefix, 'success', data.detail || 'Update installed successfully'); setTimeout(function () { location.reload(); }, 2000); break;
+              case 'up_to_date': clearInterval(pollers[prefix]); showResult(prefix, 'success', data.detail || 'Already up to date'); break;
+              case 'failed': clearInterval(pollers[prefix]); showResult(prefix, 'failed', data.detail || 'Update failed'); break;
             }
           }).catch(function () {});
       }, 1000);
@@ -364,10 +362,9 @@
     });
 
     window.addEventListener('pagehide', function () {
-      if (piPollTimer) clearInterval(piPollTimer);
-      if (fwPollTimer) clearInterval(fwPollTimer);
       if (restartPollTimer) clearInterval(restartPollTimer);
       if (devModePollTimer) clearInterval(devModePollTimer);
+      Object.keys(pollers).forEach(function (p) { if (pollers[p]) clearInterval(pollers[p]); });
     });
   })();
 

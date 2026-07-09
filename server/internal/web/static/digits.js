@@ -5,9 +5,11 @@
 (function () {
   'use strict';
 
-  // Generic <dialog> open/close. Elements opt in with data-dialog-open="<id>"
-  // or data-dialog-close; dialogs that should dismiss on a backdrop click
-  // carry data-backdrop-close.
+  // Stateless click delegations in one handler: generic <dialog>
+  // open/close/backdrop dismiss, banner dismiss, and the intercom rail /
+  // answering-machine drawer nav toggles. Elements opt in via
+  // data-dialog-open="<id>", data-dialog-close, data-backdrop-close, or
+  // data-dismiss.
   document.addEventListener('click', function (e) {
     var opener = e.target.closest('[data-dialog-open]');
     if (opener) {
@@ -23,6 +25,25 @@
     }
     if (e.target.matches && e.target.matches('dialog[data-backdrop-close]')) {
       e.target.close();
+      return;
+    }
+    var dismiss = e.target.closest('[data-dismiss]');
+    if (dismiss && dismiss.parentElement) {
+      dismiss.parentElement.remove();
+      return;
+    }
+    if (e.target.closest('.rail__toggle')) {
+      var nav = document.querySelector('.rail__nav');
+      if (nav) nav.classList.toggle('is-open');
+      return;
+    }
+    var amToggle = e.target.closest('#am-nav-toggle');
+    if (amToggle) {
+      var drawer = document.getElementById('am-nav-drawer');
+      if (drawer) {
+        var open = drawer.classList.toggle('is-open');
+        amToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
     }
   });
 
@@ -48,12 +69,6 @@
     if (msg && !window.confirm(msg)) e.preventDefault();
   }, true);
 
-  // Dismiss: remove the trigger's parent (banner close buttons).
-  document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-dismiss]');
-    if (el && el.parentElement) el.parentElement.remove();
-  });
-
   // Themed confirm dialog: [data-confirm] triggers populate and open the
   // shared #confirm-dialog, which then POSTs to data-confirm-action.
   (function () {
@@ -74,23 +89,6 @@
       dialog.showModal();
     });
   })();
-
-  // Navigation toggles for the intercom rail and the answering-machine drawer.
-  document.addEventListener('click', function (e) {
-    if (e.target.closest('.rail__toggle')) {
-      var nav = document.querySelector('.rail__nav');
-      if (nav) nav.classList.toggle('is-open');
-      return;
-    }
-    var amToggle = e.target.closest('#am-nav-toggle');
-    if (amToggle) {
-      var drawer = document.getElementById('am-nav-drawer');
-      if (drawer) {
-        var open = drawer.classList.toggle('is-open');
-        amToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-      }
-    }
-  });
 
   // Changelog: the footer "What's new" button opens the dialog and lazy-loads
   // its content; tabs switch panels; each release row plays its audio notes.
