@@ -28433,4 +28433,92 @@
 		)
 	)
 	(embedded_fonts no)
+	(gr_text "12V IN"
+		(at 46.516 70.014 0)
+		(layer "F.SilkS")
+		(uuid "4d38e567-568c-402e-9a37-c67c3ed5537a")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "KEYPAD"
+		(at 39.0 34.142 0)
+		(layer "F.SilkS")
+		(uuid "74ebc708-01a0-442b-81e7-3cd147f2ad46")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "LED"
+		(at 37.325 46.66 0)
+		(layer "F.SilkS")
+		(uuid "50a0882b-180e-4652-91db-3061e581a991")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "BELL"
+		(at 70.35 16.285 0)
+		(layer "F.SilkS")
+		(uuid "aabbe8ca-711b-484a-a0b8-b71b0f8debe6")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "HANDSET"
+		(at 86.85 33.685 0)
+		(layer "F.SilkS")
+		(uuid "1aa2da05-a7a4-4369-88d1-3d6aa1a1a244")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "MIC SW"
+		(at 75.6 30.685 0)
+		(layer "F.SilkS")
+		(uuid "c54732c1-b738-45c4-b572-5b8ffab6875f")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "Pi 40-PIN"
+		(at 22.515 41.275 0)
+		(layer "F.SilkS")
+		(uuid "89bc5e46-b6a3-403f-9f77-5e4206d0db16")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "HOOK"
+		(at 70.0 34.135 0)
+		(layer "F.SilkS")
+		(uuid "3a427d3b-1c38-4aa0-8933-6b5a8f7c2774")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
 )
