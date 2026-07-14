@@ -752,6 +752,12 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 // OnDisconnect, see the (new) sibling as the sole remaining connection, and
 // start a grace timer that nothing cancels, tearing the reconnected call down
 // when the window expires.
+//
+// The guard is a snapshot, not a lock: a reconnect can land between this
+// check and startGraceTimer arming, in which case OnReconnect's cancel finds
+// no timer and the orphaned timer survives anyway. The expiry callback
+// therefore rechecks live presence (Hub.HardwareOnlineOnLine) before tearing
+// down.
 func (r *Relay) OnConnClosed(ctx context.Context, conn *Conn) {
 	if conn == nil {
 		return
@@ -997,6 +1003,16 @@ func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
 		r.graceMu.Unlock()
 
 		ctx := context.Background()
+		// Recheck presence at fire time. Cancel-on-reconnect only works when
+		// the reconnect lands after this timer is armed; a reconnect that
+		// races the disconnecting handler (Register replaces the conn between
+		// OnConnClosed's ConnIsCurrent check and this arm) finds no timer to
+		// cancel, and the call would be torn down here despite the device
+		// being live again. The hub's current state is authoritative.
+		if r.Hub.HardwareOnlineOnLine(number, hardwareID) {
+			slog.InfoContext(ctx, "grace: device online again at expiry, keeping call", "number", number, "peer", peer)
+			return
+		}
 		slog.InfoContext(ctx, "grace: window expired, tearing down call", "number", number, "peer", peer)
 		r.endActiveCallsAsHangup(ctx, number)
 	})

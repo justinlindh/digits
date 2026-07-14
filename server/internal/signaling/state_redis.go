@@ -80,6 +80,21 @@ func (s *DeviceState) SetOnline(ctx context.Context, number string, p DevicePres
 	}
 }
 
+// setOfflineScript deletes a device presence record only if this pod still
+// owns it (or no owner is recorded). A device that reconnects to another pod
+// while the old pod's read loop is still unwinding has its presence hash
+// rewritten with the new pod_id before the old pod's Unregister runs
+// SetOffline; an unconditional delete here would erase the live record and
+// make the device look offline cluster-wide until its next SetOnline.
+var setOfflineScript = redis.NewScript(`
+local pod = redis.call('HGET', KEYS[1], 'pod_id')
+if pod == false or pod == '' or pod == ARGV[1] then
+	redis.call('DEL', KEYS[1])
+	redis.call('SREM', KEYS[2], ARGV[2])
+	return 1
+end
+return 0`)
+
 func (s *DeviceState) SetOffline(ctx context.Context, number, hardwareID string) {
 	if hardwareID == "" {
 		return
@@ -87,10 +102,7 @@ func (s *DeviceState) SetOffline(ctx context.Context, number, hardwareID string)
 	devKey := deviceKeyPrefix + hardwareID
 	setKey := lineDevicesPrefix + number
 
-	pipe := s.client.Pipeline()
-	pipe.Del(ctx, devKey)
-	pipe.SRem(ctx, setKey, hardwareID)
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := setOfflineScript.Run(ctx, s.client, []string{devKey, setKey}, s.podID, hardwareID).Err(); err != nil {
 		slog.ErrorContext(ctx, "redis: SetOffline failed", "number", number, "hardware_id", hardwareID, "err", err)
 	}
 }
@@ -116,6 +128,21 @@ func (s *DeviceState) IsHardwareOnline(ctx context.Context, hardwareID string) b
 		return false
 	}
 	return n > 0
+}
+
+// HardwareOnlineOnLine reports whether the device with this hardware id is
+// currently connected and registered on number. Stricter than
+// IsHardwareOnline: a device that came back on a different line (renumber
+// mid-window) does not count.
+func (s *DeviceState) HardwareOnlineOnLine(ctx context.Context, number, hardwareID string) bool {
+	got, err := s.client.HGet(ctx, deviceKeyPrefix+hardwareID, "number").Result()
+	if err != nil {
+		if !errors.Is(err, redis.Nil) {
+			slog.ErrorContext(ctx, "redis: HardwareOnlineOnLine failed", "hardware_id", hardwareID, "err", err)
+		}
+		return false
+	}
+	return got == number
 }
 
 func (s *DeviceState) OnlineNumbers(ctx context.Context) []string {

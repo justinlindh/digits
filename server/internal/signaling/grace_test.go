@@ -159,6 +159,78 @@ func TestOnConnClosedSkipsTeardownForSupersededReconnect(t *testing.T) {
 	}
 }
 
+// A reconnect that lands between OnConnClosed's ConnIsCurrent check and the
+// grace timer being armed finds no timer to cancel, so the orphaned timer
+// survives to expiry. The fire-time presence recheck must notice the device
+// is connected again and keep the call instead of hanging up the peer.
+func TestGraceExpiryKeepsCallWhenReconnectRacesTimerArm(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = 30 * time.Millisecond
+
+	peer := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140002", peer)
+
+	oldConn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", oldConn)
+
+	// The old conn's read loop passes OnConnClosed's ConnIsCurrent check and
+	// is then preempted. The device reconnects: Register replaces the conn in
+	// place and OnReconnect finds no grace timer to cancel yet.
+	newConn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", newConn)
+	relay.OnReconnect(context.Background(), "3140001", "hw-1")
+
+	// The old handler resumes and arms a grace timer for a live device.
+	relay.OnDisconnect(context.Background(), "3140001", "hw-1")
+
+	// Window expires: the recheck sees hw-1 registered and keeps the call.
+	time.Sleep(120 * time.Millisecond)
+	if len(tracker.ended) != 0 {
+		t.Fatalf("call torn down despite device being connected: ended=%v", tracker.ended)
+	}
+	select {
+	case <-peer.Send:
+		t.Fatal("peer received hangup despite reconnect")
+	default:
+	}
+}
+
+// The expiry recheck matches on line + hardware id: a genuinely departed
+// device (unregistered before expiry) must still be torn down.
+func TestGraceExpiryTearsDownWhenDeviceStaysGone(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = 30 * time.Millisecond
+
+	peer := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140002", peer)
+
+	conn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn)
+
+	// Real disconnect order: OnConnClosed (arms the timer), then Unregister.
+	relay.OnConnClosed(context.Background(), conn)
+	hub.Unregister("3140001", conn)
+
+	select {
+	case data := <-peer.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeHangup {
+			t.Fatalf("peer got %q, want hangup", msg.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("peer never received hangup after grace expiry")
+	}
+	if len(tracker.ended) != 1 {
+		t.Fatalf("OnCallEnded = %v, want exactly 1", tracker.ended)
+	}
+}
+
 // A genuine last-device disconnect (conn still current, not superseded) must
 // still hold the call open with a grace timer. Guards against the reconnect
 // fix over-suppressing normal teardown.
