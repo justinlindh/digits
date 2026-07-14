@@ -191,15 +191,12 @@ func TestGraceExpiryKeepsCallWhenReconnectRacesTimerArm(t *testing.T) {
 	if len(tracker.ended) != 0 {
 		t.Fatalf("call torn down despite device being connected: ended=%v", tracker.ended)
 	}
-	select {
-	case <-peer.Send:
-		t.Fatal("peer received hangup despite reconnect")
-	default:
-	}
+	expectNoMessage(t, peer)
 }
 
-// The expiry recheck matches on line + hardware id: a genuinely departed
-// device (unregistered before expiry) must still be torn down.
+// The expiry recheck must query live state inside the timer callback, not a
+// snapshot hoisted out at arm time: a device that was online when the timer
+// armed but unregistered before expiry must still be torn down.
 func TestGraceExpiryTearsDownWhenDeviceStaysGone(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()

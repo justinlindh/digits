@@ -1003,12 +1003,8 @@ func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
 		r.graceMu.Unlock()
 
 		ctx := context.Background()
-		// Recheck presence at fire time. Cancel-on-reconnect only works when
-		// the reconnect lands after this timer is armed; a reconnect that
-		// races the disconnecting handler (Register replaces the conn between
-		// OnConnClosed's ConnIsCurrent check and this arm) finds no timer to
-		// cancel, and the call would be torn down here despite the device
-		// being live again. The hub's current state is authoritative.
+		// Fire-time recheck: a reconnect can race the timer arm and find no
+		// timer to cancel (see OnConnClosed); hub state is authoritative.
 		if r.Hub.HardwareOnlineOnLine(number, hardwareID) {
 			slog.InfoContext(ctx, "grace: device online again at expiry, keeping call", "number", number, "peer", peer)
 			return
