@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestNewRelaySetsDefaultGraceWindow(t *testing.T) {
@@ -192,6 +195,55 @@ func TestGraceExpiryKeepsCallWhenReconnectRacesTimerArm(t *testing.T) {
 		t.Fatalf("call torn down despite device being connected: ended=%v", tracker.ended)
 	}
 	expectNoMessage(t, peer)
+}
+
+// End-to-end cross-pod variant of the arm-race test, threaded through a real
+// (miniredis) device-state store: the device reconnects to pod B while pod
+// A's read loop is still unwinding. Pod A arms the grace timer, then its
+// Unregister calls SetOffline, which must skip the presence record pod B now
+// owns; the fire-time recheck then reads that surviving record from Redis
+// and keeps the call.
+func TestGraceExpiryCrossPodReconnectKeepsCall(t *testing.T) {
+	mr := miniredis.RunT(t)
+	clientA := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	clientB := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = clientA.Close(); _ = clientB.Close() })
+
+	hubA := NewHub()
+	hubA.SetDeviceState(NewDeviceState(clientA, "pod-a"))
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
+	relayA := NewRelay(hubA, tracker, nil, nil)
+	relayA.GraceWindow = 30 * time.Millisecond
+
+	peer := &Conn{HardwareID: "hw-peer", Send: make(chan []byte, 10)}
+	_ = hubA.Register("3140002", peer)
+	oldConn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hubA.Register("3140001", oldConn)
+
+	// The device reconnects to pod B, which rewrites the presence record
+	// with its own pod_id. (Pod B's reconnect publish lands on pod A before
+	// the timer below is armed, so it cancels nothing; omitted here.)
+	hubB := NewHub()
+	hubB.SetDeviceState(NewDeviceState(clientB, "pod-b"))
+	newConn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hubB.Register("3140001", newConn)
+
+	// Pod A's read loop unwinds: OnDisconnect arms the timer for a device
+	// that is live on pod B, then Unregister runs SetOffline, which must
+	// leave pod B's record intact.
+	relayA.OnDisconnect(context.Background(), "3140001", "hw-1")
+	hubA.Unregister("3140001", oldConn)
+
+	// Window expires: the recheck reads pod B's record from Redis.
+	time.Sleep(120 * time.Millisecond)
+	if len(tracker.ended) != 0 {
+		t.Fatalf("call torn down despite device being live on pod B: ended=%v", tracker.ended)
+	}
+	expectNoMessage(t, peer)
+	if !hubB.HardwareOnlineOnLine("3140001", "hw-1") {
+		t.Fatal("pod B's presence record was erased by pod A's SetOffline")
+	}
 }
 
 // The expiry recheck must query live state inside the timer callback, not a
