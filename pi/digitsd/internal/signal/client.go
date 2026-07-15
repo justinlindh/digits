@@ -106,9 +106,16 @@ func (c *Client) Connect() error {
 }
 
 // readPump reads messages from the WebSocket until the connection closes.
-// It closes the done channel when it exits.
+// It closes the connection and the done channel when it exits: the pump owns
+// the connection's lifetime, so an organic drop (read error, ping timeout)
+// releases the FD immediately instead of waiting for a GC finalizer. Without
+// this, every reconnect orphaned the superseded client's socket, and on the
+// half-open drops typical of flaky WiFi the kernel kept it alive
+// indefinitely. Close() remains safe to call as well; the second close of
+// the underlying conn is a harmless error.
 func (c *Client) readPump() {
 	defer close(c.done)
+	defer func() { _ = c.conn.Close() }()
 	for {
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
