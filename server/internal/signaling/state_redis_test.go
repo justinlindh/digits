@@ -49,8 +49,8 @@ func TestDeviceStateIsHardwareOnline(t *testing.T) {
 		t.Fatal("expected hardware to be offline before SetOnline")
 	}
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-1", HardwareID: "hw-abc"})
-	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-2", HardwareID: "hw-def"})
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "test-pod", HardwareID: "hw-abc"})
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "test-pod", HardwareID: "hw-def"})
 
 	if !ds.IsHardwareOnline(ctx, "hw-abc") {
 		t.Fatal("hw-abc should be online after SetOnline")
@@ -74,7 +74,7 @@ func TestDeviceStateSetOffline(t *testing.T) {
 	ctx := context.Background()
 
 	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
-		PodID:      "pod-1",
+		PodID:      "test-pod",
 		HardwareID: "hw-abc",
 	})
 
@@ -82,6 +82,62 @@ func TestDeviceStateSetOffline(t *testing.T) {
 
 	if ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("expected device to be offline after SetOffline")
+	}
+}
+
+// A pod may only remove presence it still owns. When a device reconnects to
+// another pod before the old pod's Unregister runs, the presence hash already
+// carries the new pod_id, and the old pod's SetOffline must leave it intact.
+func TestDeviceStateSetOfflineSkipsRecordOwnedByOtherPod(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "other-pod", HardwareID: "hw-abc"})
+
+	ds.SetOffline(ctx, "5551234", "hw-abc")
+
+	if !ds.IsHardwareOnline(ctx, "hw-abc") {
+		t.Fatal("presence owned by another pod was deleted by SetOffline")
+	}
+	if !ds.IsOnline(ctx, "5551234") {
+		t.Fatal("line went offline; another pod's registration must survive")
+	}
+}
+
+// A record with no recorded owner (legacy or empty pod id) is still removable.
+func TestDeviceStateSetOfflineRemovesUnownedRecord(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{HardwareID: "hw-abc"})
+
+	ds.SetOffline(ctx, "5551234", "hw-abc")
+
+	if ds.IsHardwareOnline(ctx, "hw-abc") {
+		t.Fatal("unowned presence record should be removed by SetOffline")
+	}
+}
+
+func TestDeviceStateHardwareOnlineOnLine(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	if ds.HardwareOnlineOnLine(ctx, "5551234", "hw-abc") {
+		t.Fatal("expected offline before SetOnline")
+	}
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "test-pod", HardwareID: "hw-abc"})
+
+	if !ds.HardwareOnlineOnLine(ctx, "5551234", "hw-abc") {
+		t.Fatal("expected online on the registered line")
+	}
+	if ds.HardwareOnlineOnLine(ctx, "5559999", "hw-abc") {
+		t.Fatal("device must not count as online on a line it is not registered on")
+	}
+
+	ds.SetOffline(ctx, "5551234", "hw-abc")
+	if ds.HardwareOnlineOnLine(ctx, "5551234", "hw-abc") {
+		t.Fatal("expected offline after SetOffline")
 	}
 }
 
@@ -302,10 +358,10 @@ func TestDeviceStateSetOfflineRemovesOneDevice(t *testing.T) {
 	ctx := context.Background()
 
 	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
-		PodID: "pod-1", HardwareID: "hw-aaa", PiVersion: "1.0.0",
+		PodID: "test-pod", HardwareID: "hw-aaa", PiVersion: "1.0.0",
 	})
 	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
-		PodID: "pod-1", HardwareID: "hw-bbb", PiVersion: "1.2.0",
+		PodID: "test-pod", HardwareID: "hw-bbb", PiVersion: "1.2.0",
 	})
 
 	ds.SetOffline(ctx, "hw-5551234", "hw-aaa")

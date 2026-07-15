@@ -1035,6 +1035,31 @@ func (h *Hub) IsHardwareOnline(hardwareID string) bool {
 	return h.hwConns[hardwareID] != nil
 }
 
+// HardwareOnlineOnLine reports whether the device with this hardware id has a
+// live connection registered on number. When a shared device-state store is
+// configured it answers cross-pod from Redis; otherwise it falls back to this
+// pod's local connection map. Used by the grace-window expiry recheck, which
+// must not trust an earlier snapshot of connectivity.
+func (h *Hub) HardwareOnlineOnLine(number, hardwareID string) bool {
+	if hardwareID == "" {
+		return false
+	}
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.HardwareOnlineOnLine(context.Background(), number, hardwareID)
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.conns[number] {
+		if c.HardwareID == hardwareID {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *Hub) LocalConnectionCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

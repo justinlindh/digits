@@ -106,7 +106,12 @@ type daemonCallbacks struct {
 	// ctrlSignal is the controller seen by the signaling dispatch. It points
 	// at ctrl in the running daemon; tests inject a recording fake to verify
 	// routing without a real FSM, serial port, or audio path.
-	ctrlSignal    signalController
+	ctrlSignal signalController
+	// mu is the daemon-side lock and is INNER to the controller's c.mu: the
+	// controller invokes callbacks that take mu while holding c.mu (e.g.
+	// HandleHookFlash -> MigrateToMesh/MutePeer/TearDownPeer). Never call a
+	// controller method that takes c.mu (State, ConferenceID, ...) while
+	// holding mu; snapshot such values first (see currentPeer, AddMeshPeer).
 	mu            sync.Mutex
 	peerMgr       *owebrtc.PeerManager
 	mesh          *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr

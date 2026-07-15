@@ -603,3 +603,28 @@ func TestIsHardwareOnline(t *testing.T) {
 		t.Fatal("hw-1 should be online")
 	}
 }
+
+func TestHardwareOnlineOnLineLocalFallback(t *testing.T) {
+	h := NewHub()
+	if h.HardwareOnlineOnLine("3140001", "hw-1") {
+		t.Fatal("absent hardware should be offline")
+	}
+	if h.HardwareOnlineOnLine("3140001", "") {
+		t.Fatal("empty hardware id should never be online")
+	}
+
+	conn := &Conn{Send: make(chan []byte, 10), HardwareID: "hw-1"}
+	_ = h.Register("3140001", conn)
+
+	if !h.HardwareOnlineOnLine("3140001", "hw-1") {
+		t.Fatal("hw-1 should be online on its registered line")
+	}
+	if h.HardwareOnlineOnLine("3140002", "hw-1") {
+		t.Fatal("hw-1 must not count as online on another line")
+	}
+
+	h.Unregister("3140001", conn)
+	if h.HardwareOnlineOnLine("3140001", "hw-1") {
+		t.Fatal("hw-1 should be offline after Unregister")
+	}
+}

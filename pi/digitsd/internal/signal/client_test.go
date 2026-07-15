@@ -126,6 +126,40 @@ func TestClient_ConnectFailureClosesDone(t *testing.T) {
 	}
 }
 
+// TestClient_ReadPumpClosesConnOnDrop verifies the read pump releases the
+// socket when the server drops the connection: by the time Done() fires the
+// underlying conn is closed, so a Send fails instead of writing into an
+// orphaned socket that would otherwise linger until a GC finalizer.
+func TestClient_ReadPumpClosesConnOnDrop(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		if _, _, err := conn.ReadMessage(); err != nil { // consume register
+			t.Errorf("read: %v", err)
+		}
+		_ = conn.Close() // server-side drop without a close frame
+	}))
+	defer ts.Close()
+
+	c := NewClient(wsURL(ts), "+15550001111", "test-hw-id", "")
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	select {
+	case <-c.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done() channel not closed after server drop")
+	}
+
+	if err := c.Send(&Message{Type: TypeRegister}); err == nil {
+		t.Fatal("Send succeeded on a dropped connection; read pump left the socket open")
+	}
+}
+
 // TestClient_SendMessage verifies that Send() delivers a message to the server.
 func TestClient_SendMessage(t *testing.T) {
 	received := make(chan *Message, 1)

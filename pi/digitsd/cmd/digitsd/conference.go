@@ -211,9 +211,15 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 		return
 	}
 
+	// Snapshot the conference id before taking d.mu. ConferenceID acquires
+	// c.mu, and the controller invokes daemon callbacks that take d.mu while
+	// holding c.mu (HandleHookFlash -> MigrateToMesh/MutePeer/TearDownPeer),
+	// so c.mu must never be acquired with d.mu held: doing so is an AB-BA
+	// deadlock against the UART event goroutine. Same rule as currentPeer.
+	confID := d.ctrl.ConferenceID()
+
 	d.mu.Lock()
 	mesh := d.ensureMesh()
-	confID := d.ctrl.ConferenceID()
 	sig := d.sig
 	d.mu.Unlock()
 

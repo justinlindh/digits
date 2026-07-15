@@ -6,9 +6,9 @@ FAILED=0
 
 # ── shellcheck staged shell scripts ───────────────────────────────────────────
 # Mirrors the Shellcheck CI gate (.github/workflows/shellcheck-ci.yml): same
-# -S warning -x severity, scoped to the tools/, scripts/, and pi/image/ trees.
-# Only the files this commit touches are checked. Skips gracefully (never
-# blocks the commit) when shellcheck is not installed.
+# -S warning -x severity, scoped to the tools/, scripts/, pi/image/, and
+# server shell scripts. Only the files this commit touches are checked. Skips
+# gracefully (never blocks the commit) when shellcheck is not installed.
 if command -v shellcheck &>/dev/null; then
     SHELL_FILES=()
     while IFS= read -r f; do
@@ -22,7 +22,7 @@ if command -v shellcheck &>/dev/null; then
                 # select by shebang.
                 [ -f "$REPO_ROOT/$f" ] && head -1 "$REPO_ROOT/$f" | grep -qE '^#!.*(bash|/bin/sh|busybox sh)' \
                     && SHELL_FILES+=("$f") ;;
-            tools/*.sh|scripts/*.sh|pi/image/*.sh)
+            tools/*.sh|scripts/*.sh|pi/image/*.sh|server/*.sh)
                 SHELL_FILES+=("$f") ;;
         esac
     done < <(git diff --cached --name-only --diff-filter=ACM)
