@@ -132,7 +132,7 @@ Sangyn 2500 phone: 4×3 matrix, 7-pin ribbon cable.
 - **Connector:** Pico H uses JST-SH 1.0mm 3-pin (NOT JST-XH 2.54mm)
 - **Purpose:** Allows Pi to flash Pico firmware via OpenOCD SWD bitbang
 - **GPIO conflict note:** Standard SWD config uses GPIO 24 for SWDIO, but Codec Zero hardwires GPIO 23/24 to onboard LEDs. GPIO 22 is used instead.
-- **Flash command:** `sudo bash /data/digits/swd/flash-pico.sh /data/digits/firmware.elf`
+- **Flash command:** `sudo /usr/local/bin/flash-pico.sh /data/digits/firmware.elf`
 - **Auto-flash:** digitsd automatically flashes if Pico fails POST and `/data/digits/firmware.elf` exists
 
 ## Ringer Circuit
