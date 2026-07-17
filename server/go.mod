@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.12.3
-	github.com/lmittmann/tint v1.1.3
+	github.com/lmittmann/tint v1.2.0
 )
 
 require (
