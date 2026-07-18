@@ -33,7 +33,7 @@ func Setup() {
 	if os.Getenv("LOG_FORMAT") == "json" {
 		inner = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
 	} else {
-		inner = tint.NewHandler(os.Stderr, &tint.Options{
+		inner = tint.NewTextHandler(os.Stderr, &tint.Options{
 			Level:      slog.LevelInfo,
 			TimeFormat: "15:04:05",
 		})
