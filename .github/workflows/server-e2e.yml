@@ -44,7 +44,7 @@ jobs:
           # Self-hosted runners carry a persistent local Go cache, so actions/cache traffic is pure waste; the ubuntu-latest fallback (forks, homelab pool disabled) forgoes Go caching by design.
           cache: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
