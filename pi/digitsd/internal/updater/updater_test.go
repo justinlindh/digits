@@ -347,3 +347,70 @@ func TestDownload_MarkerMismatchRestartsFresh(t *testing.T) {
 		t.Errorf("content = %q, want %q", got, body)
 	}
 }
+
+func TestCheckVersion_StaleIndexDoesNotDowngrade(t *testing.T) {
+	// A replica whose release index has not refreshed yet advertises the
+	// previous release as Latest; implicit-latest resolution must not offer
+	// that downgrade.
+	srv := newTestServer(ReleaseIndex{
+		Pi: ComponentIndex{Latest: "1.44.7", Releases: map[string]*Release{
+			"1.44.7": {Version: "1.44.7"},
+		}},
+		Firmware: ComponentIndex{Latest: "1.14.2", Releases: map[string]*Release{
+			"1.14.2": {Version: "1.14.2"},
+		}},
+	})
+	defer srv.Close()
+
+	u := New(Config{ServerBaseURL: srv.URL, CurrentPiVersion: "1.44.8", CurrentFWVersion: "1.14.3"})
+	res, err := u.CheckVersion("", "")
+	if err != nil {
+		t.Fatalf("CheckVersion() error: %v", err)
+	}
+	if res.PiAvailable {
+		t.Errorf("PiAvailable = true for stale index (current 1.44.8, latest 1.44.7)")
+	}
+	if res.FWAvailable {
+		t.Errorf("FWAvailable = true for stale index (current 1.14.3, latest 1.14.2)")
+	}
+}
+
+func TestCheckVersion_ExplicitTargetStillDowngrades(t *testing.T) {
+	// Operator-pinned targets keep exact-match semantics: a deliberate
+	// rollback to an older release must still be offered.
+	srv := newTestServer(ReleaseIndex{
+		Pi: ComponentIndex{Latest: "1.44.8", Releases: map[string]*Release{
+			"1.44.6": {Version: "1.44.6"},
+			"1.44.8": {Version: "1.44.8"},
+		}},
+	})
+	defer srv.Close()
+
+	u := New(Config{ServerBaseURL: srv.URL, CurrentPiVersion: "1.44.8"})
+	res, err := u.CheckVersion("1.44.6", "")
+	if err != nil {
+		t.Fatalf("CheckVersion() error: %v", err)
+	}
+	if !res.PiAvailable || res.PiVersion != "1.44.6" {
+		t.Errorf("explicit downgrade not offered: available=%v version=%q", res.PiAvailable, res.PiVersion)
+	}
+}
+
+func TestVersionIsNewer(t *testing.T) {
+	cases := []struct {
+		candidate, current string
+		want               bool
+	}{
+		{"1.14.3", "1.14.2", true},
+		{"1.14.2", "1.14.3", false},
+		{"1.14.3", "1.14.3", false},
+		{"1.44.10", "1.44.9", true},
+		{"1.14.3", "1.14.1-33-g0a4f0773-dirty", true},
+		{"weird-build", "other-build", true},
+	}
+	for _, c := range cases {
+		if got := versionIsNewer(c.candidate, c.current); got != c.want {
+			t.Errorf("versionIsNewer(%q, %q) = %v, want %v", c.candidate, c.current, got, c.want)
+		}
+	}
+}

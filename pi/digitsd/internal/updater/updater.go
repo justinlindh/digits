@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -189,7 +191,16 @@ func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) 
 // an error only when an explicit target is set but missing from the index.
 func resolveTargetRelease(label, target, current string, comp ComponentIndex) (*Release, error) {
 	if target == "" {
+		// Implicit "latest" must never move a device backward. Each server
+		// replica refreshes its release index on its own timer, so right
+		// after a release a stale pod can briefly advertise the previous
+		// version as Latest; treating "different" as "available" would flash
+		// that downgrade. An explicit target keeps exact-match semantics so
+		// operator-driven rollbacks still work.
 		target = comp.Latest
+		if target == "" || !versionIsNewer(target, current) {
+			return nil, nil
+		}
 	}
 	if target == "" || target == current {
 		return nil, nil
@@ -199,6 +210,18 @@ func resolveTargetRelease(label, target, current string, comp ComponentIndex) (*
 		return nil, fmt.Errorf("%s version %s not found in release index", label, target)
 	}
 	return rel, nil
+}
+
+// versionIsNewer reports whether candidate is strictly newer than current.
+// Both sides are compared as semver (with the "v" prefix the index omits);
+// unparseable versions, like git-describe dev builds, fall back to plain
+// inequality so a dev device still converges onto a published release.
+func versionIsNewer(candidate, current string) bool {
+	cv, cc := "v"+candidate, "v"+current
+	if semver.IsValid(cv) && semver.IsValid(cc) {
+		return semver.Compare(cv, cc) > 0
+	}
+	return candidate != current
 }
 
 // Download downloads an artifact from a URL, verifies SHA256, and writes it
