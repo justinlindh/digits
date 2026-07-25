@@ -22,7 +22,8 @@ type PeerManager struct {
 	decoder       *codec.Decoder
 	outboundMuted atomic.Bool
 	inboundMuted  atomic.Bool
-	zeroBuf       []int16 // reusable zero slice for muted encodes; allocated once at construction
+	zeroBuf       []int16      // reusable zero slice for muted encodes; allocated once at construction
+	closeFn       func() error // when set, Close calls this instead of pc.Close (test seam)
 
 	// Callbacks (set by caller before use):
 	OnRemoteTrack     func(track *webrtc.TrackRemote)
@@ -261,9 +262,24 @@ func (m *PeerManager) GetStats() webrtc.StatsReport {
 	return m.pc.GetStats()
 }
 
-// Close closes the underlying PeerConnection.
+// Close closes the underlying PeerConnection. When a TURN server URL is
+// unreachable (blackholed turns: or ?transport=tcp), pion's Close can block
+// for minutes waiting on an uncancelable net.DialTCP in the relay gatherer;
+// callers must never hold a lock across Close or invoke it on a latency
+// sensitive path.
 func (m *PeerManager) Close() error {
+	if m.closeFn != nil {
+		return m.closeFn()
+	}
 	return m.pc.Close()
+}
+
+// NewPeerManagerWithCloseFn returns a stub PeerManager whose Close calls fn.
+// No PeerConnection is created, so only Close is usable. Test seam: teardown
+// promptness tests need a Close that blocks like a blackholed TURN dial,
+// which a real PeerConnection cannot reproduce hermetically.
+func NewPeerManagerWithCloseFn(fn func() error) *PeerManager {
+	return &PeerManager{closeFn: fn}
 }
 
 // ConnectionState reports the current peer connection state. Used by the

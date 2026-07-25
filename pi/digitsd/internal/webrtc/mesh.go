@@ -47,14 +47,36 @@ func (m *MeshManager) GetPeer(phone string) *PeerManager {
 	return m.peers[phone]
 }
 
-// RemovePeer tears down the PeerManager for phone, if any. Safe to call with
-// an unknown phone -- no-op.
-func (m *MeshManager) RemovePeer(phone string) {
+// DetachPeer removes and returns the PeerManager for phone without closing
+// it, or nil if none exists. Ownership transfers to the caller, who must
+// close it. Teardown paths use this so the potentially minutes-long Close
+// (see PeerManager.Close) runs off the caller's locks.
+func (m *MeshManager) DetachPeer(phone string) *PeerManager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if pm, ok := m.peers[phone]; ok {
+	pm := m.peers[phone]
+	delete(m.peers, phone)
+	return pm
+}
+
+// DetachAll removes and returns every peer without closing them, keyed by
+// phone number. Ownership transfers to the caller. After DetachAll the
+// MeshManager is empty and reusable.
+func (m *MeshManager) DetachAll() map[string]*PeerManager {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	detached := m.peers
+	m.peers = make(map[string]*PeerManager)
+	return detached
+}
+
+// RemovePeer tears down the PeerManager for phone, if any. Safe to call with
+// an unknown phone -- no-op. The Close runs outside m.mu: holding the lock
+// across a blocked Close would wedge SendPCMFrameToAll and every other mesh
+// accessor for the duration.
+func (m *MeshManager) RemovePeer(phone string) {
+	if pm := m.DetachPeer(phone); pm != nil {
 		_ = pm.Close()
-		delete(m.peers, phone)
 	}
 }
 
@@ -119,12 +141,10 @@ func (m *MeshManager) Adopt(phone string, pm *PeerManager) {
 }
 
 // CloseAll tears down every peer. After CloseAll the MeshManager can be
-// reused: new AddPeer calls will construct fresh PeerManagers.
+// reused: new AddPeer calls will construct fresh PeerManagers. The Closes
+// run outside m.mu for the same reason as RemovePeer.
 func (m *MeshManager) CloseAll() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for p, pm := range m.peers {
+	for _, pm := range m.DetachAll() {
 		_ = pm.Close()
-		delete(m.peers, p)
 	}
 }

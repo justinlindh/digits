@@ -10,6 +10,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
@@ -123,28 +124,53 @@ func (d *daemonCallbacks) currentPeer() string {
 	}
 }
 
+// TearDownPeer detaches all daemon state for phone synchronously but runs the
+// PeerManager Closes on a detached goroutine, mirroring the async hangup
+// teardown in webrtc.go. The controller invokes this callback with c.mu held
+// (busy/error/hangup in ADD_CALLING, abortAdd, merge rejection), and a
+// blocked Close (see PeerManager.Close) held both mutexes for minutes on the
+// phones: busy tone kept looping on-hook with dead keys until the TURN dial
+// timed out.
 func (d *daemonCallbacks) TearDownPeer(phone string) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if cancel, ok := d.meshReporterCancels[phone]; ok {
 		cancel()
 		delete(d.meshReporterCancels, phone)
 	}
+	var meshPM *owebrtc.PeerManager
 	if d.mesh != nil {
-		d.mesh.RemovePeer(phone)
+		meshPM = d.mesh.DetachPeer(phone)
 	}
 	// If the phone being torn down is the current 2-party peer (e.g. an
 	// ADD_CALLING target that the server rejected before it could migrate
-	// into the mesh), close its PeerManager too so we don't leak a dead PC
+	// into the mesh), detach its PeerManager too so we don't leak a dead PC
 	// across retries.
+	var pm *owebrtc.PeerManager
 	if d.peerMgr != nil && d.callPeer == phone {
-		if err := d.peerMgr.Close(); err != nil {
-			slog.Warn("TearDownPeer: peerMgr close failed", "phone", phone, "error", err)
-		}
+		pm = d.peerMgr
 		d.peerMgr = nil
 		d.callPeer = ""
 	}
+	d.mu.Unlock()
 	d.mixer.RemoveWebRTCSource(phone)
+	if meshPM == nil && pm == nil {
+		return
+	}
+	go func() {
+		defer recoverGoroutine("teardown-peer")
+		t := time.Now()
+		if meshPM != nil {
+			if err := meshPM.Close(); err != nil {
+				slog.Warn("TearDownPeer: mesh peer close failed", "phone", phone, "error", err)
+			}
+		}
+		if pm != nil {
+			if err := pm.Close(); err != nil {
+				slog.Warn("TearDownPeer: peerMgr close failed", "phone", phone, "error", err)
+			}
+		}
+		slog.Info("TearDownPeer: peer closed", "phone", phone, "elapsed", time.Since(t).Round(time.Millisecond))
+	}()
 }
 
 func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
@@ -270,6 +296,9 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 	slog.Info("conference: sent SDP offer to peer", "phone", phone, "conf_id", confID)
 }
 
+// RemoveMeshPeer detaches the mesh peer's state and closes it on a detached
+// goroutine. HandleConferenceLeave invokes this with c.mu held, so a blocked
+// Close here would wedge the FSM the same way TearDownPeer did.
 func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
 	slog.Info("conference: removing mesh peer", "phone", phone)
 	d.mu.Lock()
@@ -279,32 +308,56 @@ func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
 		delete(d.meshReporterCancels, phone)
 	}
 	d.mu.Unlock()
+	var pm *owebrtc.PeerManager
 	if mesh != nil {
-		mesh.RemovePeer(phone)
+		pm = mesh.DetachPeer(phone)
 	}
 	d.mixer.RemoveWebRTCSource(phone)
+	if pm == nil {
+		return
+	}
+	go func() {
+		defer recoverGoroutine("remove-mesh-peer")
+		t := time.Now()
+		if err := pm.Close(); err != nil {
+			slog.Warn("RemoveMeshPeer: close failed", "phone", phone, "error", err)
+		}
+		slog.Info("RemoveMeshPeer: peer closed", "phone", phone, "elapsed", time.Since(t).Round(time.Millisecond))
+	}()
 }
 
+// TearDownAllMeshPeers detaches every mesh peer's state and closes each on
+// its own detached goroutine. onHookOn and HandleConferenceEnd invoke this
+// with c.mu held; the signal reconnect loop also calls it and must not stall
+// on a blocked Close.
 func (d *daemonCallbacks) TearDownAllMeshPeers() {
 	d.mu.Lock()
 	mesh := d.mesh
-	var peers []string
-	if mesh != nil {
-		peers = mesh.ActivePeers()
-	}
 	for phone, cancel := range d.meshReporterCancels {
 		cancel()
 		delete(d.meshReporterCancels, phone)
 	}
 	d.mu.Unlock()
+	var detached map[string]*owebrtc.PeerManager
+	if mesh != nil {
+		detached = mesh.DetachAll()
+	}
+	peers := make([]string, 0, len(detached))
+	for p := range detached {
+		peers = append(peers, p)
+	}
 	slog.Info("conference: tearing down all mesh peers", "count", len(peers), "peers", peers)
-	if mesh == nil {
-		return
-	}
-	for _, p := range peers {
+	for p, pm := range detached {
 		d.mixer.RemoveWebRTCSource(p)
+		go func() {
+			defer recoverGoroutine("teardown-mesh-peer")
+			t := time.Now()
+			if err := pm.Close(); err != nil {
+				slog.Warn("TearDownAllMeshPeers: close failed", "phone", p, "error", err)
+			}
+			slog.Info("TearDownAllMeshPeers: peer closed", "phone", p, "elapsed", time.Since(t).Round(time.Millisecond))
+		}()
 	}
-	mesh.CloseAll()
 }
 
 // setupMeshResponder creates a mesh peer for an incoming conference SDP offer,
