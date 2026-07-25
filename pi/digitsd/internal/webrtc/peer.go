@@ -3,6 +3,7 @@ package owebrtc
 import (
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -272,6 +273,24 @@ func (m *PeerManager) Close() error {
 		return m.closeFn()
 	}
 	return m.pc.Close()
+}
+
+// CloseAsync runs Close on a detached goroutine so callers on latency
+// sensitive paths, or holding locks, never wait out a blocked TURN dial.
+// site tags the log lines with the teardown path; phone identifies the peer.
+func (m *PeerManager) CloseAsync(site, phone string) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("goroutine panic recovered", "goroutine", "close-"+site, "panic", r, "stack", string(debug.Stack()))
+			}
+		}()
+		t := time.Now()
+		if err := m.Close(); err != nil {
+			slog.Warn("webrtc: async close failed", "site", site, "phone", phone, "error", err)
+		}
+		slog.Info("webrtc: peer closed", "site", site, "phone", phone, "elapsed", time.Since(t).Round(time.Millisecond))
+	}()
 }
 
 // NewPeerManagerWithCloseFn returns a stub PeerManager whose Close calls fn.

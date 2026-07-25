@@ -619,12 +619,7 @@ func (d *daemonCallbacks) cleanupPreAnswer() {
 	if caller != "" {
 		d.mixer.RemoveWebRTCSource(caller)
 	}
-	go func() {
-		defer recoverGoroutine("cleanupPreAnswer")
-		if err := pm.Close(); err != nil {
-			slog.Warn("cleanupPreAnswer: close failed", "error", err)
-		}
-	}()
+	pm.CloseAsync("cleanupPreAnswer", caller)
 }
 
 // triggerHangup dispatches a hangup to the controller from a fresh goroutine.

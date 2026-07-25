@@ -47,11 +47,11 @@ func (m *MeshManager) GetPeer(phone string) *PeerManager {
 	return m.peers[phone]
 }
 
-// DetachPeer removes and returns the PeerManager for phone without closing
+// detachPeer removes and returns the PeerManager for phone without closing
 // it, or nil if none exists. Ownership transfers to the caller, who must
 // close it. Teardown paths use this so the potentially minutes-long Close
 // (see PeerManager.Close) runs off the caller's locks.
-func (m *MeshManager) DetachPeer(phone string) *PeerManager {
+func (m *MeshManager) detachPeer(phone string) *PeerManager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	pm := m.peers[phone]
@@ -59,25 +59,38 @@ func (m *MeshManager) DetachPeer(phone string) *PeerManager {
 	return pm
 }
 
-// DetachAll removes and returns every peer without closing them, keyed by
-// phone number. Ownership transfers to the caller. After DetachAll the
-// MeshManager is empty and reusable.
-func (m *MeshManager) DetachAll() map[string]*PeerManager {
+// detachAll removes and returns every peer without closing them, keyed by
+// phone number, or nil if the mesh is already empty. Ownership transfers to
+// the caller. After detachAll the MeshManager is empty and reusable.
+func (m *MeshManager) detachAll() map[string]*PeerManager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if len(m.peers) == 0 {
+		return nil
+	}
 	detached := m.peers
 	m.peers = make(map[string]*PeerManager)
 	return detached
 }
 
-// RemovePeer tears down the PeerManager for phone, if any. Safe to call with
-// an unknown phone -- no-op. The Close runs outside m.mu: holding the lock
-// across a blocked Close would wedge SendPCMFrameToAll and every other mesh
-// accessor for the duration.
-func (m *MeshManager) RemovePeer(phone string) {
-	if pm := m.DetachPeer(phone); pm != nil {
-		_ = pm.Close()
+// RemovePeerAsync detaches the PeerManager for phone and closes it on a
+// detached goroutine (see PeerManager.CloseAsync). Safe to call with an
+// unknown phone -- no-op. The peer is gone from the mesh on return.
+func (m *MeshManager) RemovePeerAsync(phone, site string) {
+	if pm := m.detachPeer(phone); pm != nil {
+		pm.CloseAsync(site, phone)
 	}
+}
+
+// CloseAllAsync detaches every peer and closes each on its own detached
+// goroutine. Returns the number of peers detached. The mesh is empty and
+// reusable on return.
+func (m *MeshManager) CloseAllAsync(site string) int {
+	detached := m.detachAll()
+	for phone, pm := range detached {
+		pm.CloseAsync(site, phone)
+	}
+	return len(detached)
 }
 
 // ActivePeers returns a snapshot of the current peer phone numbers.
@@ -140,11 +153,12 @@ func (m *MeshManager) Adopt(phone string, pm *PeerManager) {
 	m.peers[phone] = pm
 }
 
-// CloseAll tears down every peer. After CloseAll the MeshManager can be
-// reused: new AddPeer calls will construct fresh PeerManagers. The Closes
-// run outside m.mu for the same reason as RemovePeer.
+// CloseAll tears down every peer, blocking until all are closed. After
+// CloseAll the MeshManager can be reused: new AddPeer calls will construct
+// fresh PeerManagers. The Closes run outside m.mu: holding the lock across
+// a blocked Close would wedge SendPCMFrameToAll and every other accessor.
 func (m *MeshManager) CloseAll() {
-	for _, pm := range m.DetachAll() {
+	for _, pm := range m.detachAll() {
 		_ = pm.Close()
 	}
 }

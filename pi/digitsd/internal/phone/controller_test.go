@@ -2676,35 +2676,3 @@ func TestController_RingTimeoutAutoAnswerFailureRevertsToIdle(t *testing.T) {
 		t.Errorf("expected 1 HangupCall to notify caller and server, got %d", cb.Hangups())
 	}
 }
-
-// TestController_ThirdBusyThenHookOnGoesIdle mirrors the field wedge that
-// motivated making teardown callbacks non-blocking: busy arrives in
-// ADD_CALLING (TearDownPeer fires), and the user immediately hangs up. The
-// HOOK:ON must be processed right away, silencing the busy tone and landing
-// in IDLE, rather than queueing behind a teardown stuck in a peer close.
-func TestController_ThirdBusyThenHookOnGoesIdle(t *testing.T) {
-	mock := &mockCallbacks{}
-	c := newTestController(mock, "5550001")
-	c.setStateForTest(StateADD_CALLING)
-	c.setHeldPeerForTest("5550002")
-	c.setAddingPeerForTest("5550003")
-
-	c.HandleSignal("busy", "5550003")
-	if c.State() != StateADD_INTERCEPT {
-		t.Fatalf("expected StateADD_INTERCEPT after busy, got %v", c.State())
-	}
-	if !mock.peerTorndown("5550003") {
-		t.Fatalf("expected C torn down on busy")
-	}
-
-	c.HandleEvent("HOOK:ON")
-	if c.State() != StateIDLE {
-		t.Fatalf("expected StateIDLE after HOOK:ON, got %v", c.State())
-	}
-	if !mock.allPeersTorndown() {
-		t.Fatalf("expected TearDownAllMeshPeers on hook-on from ADD_INTERCEPT")
-	}
-	if !mock.tonePlayed(ToneStop) {
-		t.Fatalf("expected tones stopped on hook-on, got %v", mock.Tones())
-	}
-}

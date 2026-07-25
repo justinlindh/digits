@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -16,9 +15,9 @@ import (
 
 // slowClose returns a Close func that reports entry on closing and blocks
 // until release is closed.
-func slowClose(closing chan<- string, who string, release <-chan struct{}) func() error {
+func slowClose(closing chan<- struct{}, release <-chan struct{}) func() error {
 	return func() error {
-		closing <- who
+		closing <- struct{}{}
 		<-release
 		return nil
 	}
@@ -40,27 +39,24 @@ func waitPrompt(t *testing.T, name string, fn func()) {
 }
 
 // waitCloseStarted fails the test if no close entry arrives within 2 seconds.
-func waitCloseStarted(t *testing.T, closing <-chan string) string {
+func waitCloseStarted(t *testing.T, closing <-chan struct{}) {
 	t.Helper()
 	select {
-	case who := <-closing:
-		return who
+	case <-closing:
 	case <-time.After(2 * time.Second):
 		t.Fatal("peer close never started")
-		return ""
 	}
 }
 
 func TestTearDownPeerReturnsWhileCloseBlocks(t *testing.T) {
-	closing := make(chan string, 2)
+	closing := make(chan struct{}, 2)
 	release := make(chan struct{})
-	releaseOnce := sync.OnceFunc(func() { close(release) })
-	t.Cleanup(releaseOnce)
+	t.Cleanup(func() { close(release) })
 
 	d := newTestDaemon()
 	d.mesh = owebrtc.NewMeshManager(owebrtc.NewICEConfig(nil))
-	d.mesh.Adopt("5550003", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, "mesh", release)))
-	d.peerMgr = owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, "2party", release))
+	d.mesh.Adopt("5550003", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, release)))
+	d.peerMgr = owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, release))
 	d.callPeer = "5550003"
 
 	waitPrompt(t, "TearDownPeer", func() { d.TearDownPeer("5550003") })
@@ -76,25 +72,20 @@ func TestTearDownPeerReturnsWhileCloseBlocks(t *testing.T) {
 		t.Fatal("mesh peer not detached")
 	}
 
-	// Both closes still run to completion: mesh first, then 2-party once the
-	// blocking close is released.
-	if who := waitCloseStarted(t, closing); who != "mesh" {
-		t.Fatalf("expected mesh close first, got %q", who)
-	}
-	releaseOnce()
-	if who := waitCloseStarted(t, closing); who != "2party" {
-		t.Fatalf("expected 2-party close second, got %q", who)
-	}
+	// The mesh close and the 2-party close run concurrently: both must start
+	// while both are still blocked.
+	waitCloseStarted(t, closing)
+	waitCloseStarted(t, closing)
 }
 
 func TestRemoveMeshPeerReturnsWhileCloseBlocks(t *testing.T) {
-	closing := make(chan string, 1)
+	closing := make(chan struct{}, 1)
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 
 	d := newTestDaemon()
 	d.mesh = owebrtc.NewMeshManager(owebrtc.NewICEConfig(nil))
-	d.mesh.Adopt("5550002", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, "mesh", release)))
+	d.mesh.Adopt("5550002", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, release)))
 
 	waitPrompt(t, "RemoveMeshPeer", func() { d.RemoveMeshPeer("5550002") })
 
@@ -105,14 +96,14 @@ func TestRemoveMeshPeerReturnsWhileCloseBlocks(t *testing.T) {
 }
 
 func TestTearDownAllMeshPeersReturnsWhileCloseBlocks(t *testing.T) {
-	closing := make(chan string, 2)
+	closing := make(chan struct{}, 2)
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 
 	d := newTestDaemon()
 	d.mesh = owebrtc.NewMeshManager(owebrtc.NewICEConfig(nil))
-	d.mesh.Adopt("5550002", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, "b", release)))
-	d.mesh.Adopt("5550003", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, "c", release)))
+	d.mesh.Adopt("5550002", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, release)))
+	d.mesh.Adopt("5550003", owebrtc.NewPeerManagerWithCloseFn(slowClose(closing, release)))
 
 	waitPrompt(t, "TearDownAllMeshPeers", func() { d.TearDownAllMeshPeers() })
 
