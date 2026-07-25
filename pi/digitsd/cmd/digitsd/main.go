@@ -1783,8 +1783,18 @@ func main() {
 	_, err2 := os.Stat("/usr/local/bin/flash-pico.sh")
 	swdFilesPresent := err1 == nil && err2 == nil
 
+	// Closed once flash capability is settled (probe finished, or no probe to
+	// run). The startup auto-update check waits on this: it otherwise races
+	// the probe, reads flashCapable=false, and skips a pending firmware
+	// update until the next external trigger, which can be days away.
+	swdProbeDone := make(chan struct{})
+	if !swdFilesPresent {
+		close(swdProbeDone)
+	}
+
 	if swdFilesPresent {
 		go func(fwVer, fwCom string) {
+			defer close(swdProbeDone)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, "sudo", defaultOpenOCD,
@@ -1924,7 +1934,17 @@ func main() {
 	}
 	if cb.autoUpdateAllowed() {
 		slog.Info("auto-update: enabled, checking for updates on startup")
-		go cb.triggerAutoUpdate()
+		go func() {
+			// Wait for the SWD probe so the check sees the real flash
+			// capability; the timeout keeps a wedged openocd from blocking
+			// the startup check entirely (the probe's own context is 5s).
+			select {
+			case <-swdProbeDone:
+			case <-time.After(15 * time.Second):
+				slog.Warn("auto-update: SWD probe still pending, checking without it")
+			}
+			cb.triggerAutoUpdate()
+		}()
 	} else if devmode.IsSet(devmode.DefaultSkipAutoUpdatePath) {
 		slog.Info("auto-update: suppressed by dev-mode skip flag")
 	}
