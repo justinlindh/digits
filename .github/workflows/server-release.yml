@@ -13,6 +13,13 @@ on:
     paths:
       - "server/**"
       - ".github/workflows/server-release.yml"
+  # Daily catch-up for releases stranded by the behind-remote race described
+  # below. The race window is small once checkout uses the branch tip, but a
+  # push landing mid-run in a component that never touches this workflow's
+  # paths would still strand the release with no retry until the next
+  # path-matching push.
+  schedule:
+    - cron: "47 9 * * *"
 
 # Serialize release runs so two PRs merging back-to-back don't race
 # semantic-release. Without this, the second run's checkout is "behind"
@@ -21,6 +28,15 @@ on:
 # version won't be published" -- silently skipping the tag for that
 # PR's commits. cancel-in-progress=false queues the second run instead
 # of cancelling, so each merge eventually gets analyzed.
+#
+# Two hardenings on top of the concurrency group, because it only
+# serializes runs of THIS workflow while the behind-remote check compares
+# against every push to main: merges in other components advance main too
+# (fw/v1.14.2 sat unreleased for two weeks in July 2026 when fix #850 lost
+# exactly that race twice). The release job checks out ref main instead of
+# the triggering github.sha so a queued run analyzes the current tip, and
+# the schedule trigger above retries daily in case a mid-run push still
+# wins the race.
 concurrency:
   group: server-release
   cancel-in-progress: false
@@ -40,6 +56,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # Branch tip, not github.sha: see the behind-remote comment above.
+          ref: main
           fetch-depth: 0
 
       - uses: actions/setup-node@v7
