@@ -253,6 +253,17 @@ func (c *Capture) ReadFrame() ([]int16, error) {
 	return out, nil
 }
 
+// Abort forces a ReadFrame blocked inside snd_pcm_readi to return an error.
+// snd_pcm_abort is documented as callable from another thread against a
+// blocked read; afterwards the handle stays in abort mode, so this is a
+// point of no return on the stream. Close must still be called to release
+// the device.
+func (c *Capture) Abort() {
+	if c.handle != nil {
+		C.snd_pcm_abort(c.handle)
+	}
+}
+
 // Close closes the capture handle.
 func (c *Capture) Close() {
 	if c.handle != nil {
