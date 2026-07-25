@@ -214,9 +214,9 @@ static void test_fsm_hangup_returns_to_idle(void) {
     set_hook(false);  // cradle
     run_for_ms(100);
     CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_IDLE);
-    // fsm_reset_idle leaves the phase PAIRED, whose idle indicator is the
-    // breathing ambient pattern (see phase_idle_led_mode / docs/user-guide.md).
-    CHECK_EQ(fake_led_mode(), LED_MODE_BREATHING);
+    // fsm_reset_idle leaves the phase PAIRED, whose idle indicator is dark
+    // per the user guide's normal-operation table (see phase_idle_led_mode).
+    CHECK_EQ(fake_led_mode(), LED_MODE_OFF);
 }
 
 static void test_fsm_ring_then_offhook_connects(void) {
@@ -285,12 +285,20 @@ static void test_fsm_idle_led_follows_phase(void) {
     run_for_ms(20);
     CHECK_EQ(fake_led_mode(), LED_MODE_DOUBLE_PULSE);
 
-    // PAIRED idles on the breathing pattern, not OFF. This is the mapping that
-    // previously drifted between main.c and phone_fsm.c.
+    // PAIRED idles dark. Breathing while idle would collide with the
+    // active-call indicator; only the boot-settle path breathes for PAIRED
+    // (phase_boot_led_mode), and digitsd's STATE:SET resync ends it.
     fake_phase_set(PHASE_PAIRED);
     send_cmd("STATE:SET:PAIRED");
     run_for_ms(20);
-    CHECK_EQ(fake_led_mode(), LED_MODE_BREATHING);
+    CHECK_EQ(fake_led_mode(), LED_MODE_OFF);
+
+    // The boot-settle mapping differs from idle only for PAIRED.
+    CHECK_EQ(phase_boot_led_mode(PHASE_PAIRED), LED_MODE_BREATHING);
+    CHECK_EQ(phase_boot_led_mode(PHASE_UNPAIRED), LED_MODE_SLOW_PULSE);
+    CHECK_EQ(phase_boot_led_mode(PHASE_SETUP), LED_MODE_DOUBLE_PULSE);
+    CHECK_EQ(phase_boot_led_mode(PHASE_RECOVERY), LED_MODE_FAST_BLINK);
+    CHECK_EQ(phase_boot_led_mode(0xFF), LED_MODE_OFF);
 }
 
 static void test_fsm_state_set_writes_phase_and_acks(void) {

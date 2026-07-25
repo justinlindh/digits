@@ -94,7 +94,7 @@ int main(void) {
     keypad_init();
     led_init();
 
-    led_set_mode(phase_idle_led_mode(phase_read()));
+    led_set_mode(phase_boot_led_mode(phase_read()));
 
     ringer_init();
     uart_proto_init();
