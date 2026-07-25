@@ -231,6 +231,14 @@ func (p *Pipeline) Start() error {
 // Stop shuts down the pipeline goroutines and closes all ALSA/denoiser handles.
 func (p *Pipeline) Stop() {
 	close(p.stop)
+	// Unblock a captureLoop parked inside a blocking snd_pcm_readi. A capture
+	// stream that stalls without erroring (a never-clocked outbound pipeline
+	// after a no-answer call, a wedged codec clock) otherwise deadlocks
+	// wg.Wait forever, the device below is never closed, and every later
+	// call fails its snd_pcm_open with EBUSY until reboot.
+	if p.capture != nil {
+		p.capture.Abort()
+	}
 	p.wg.Wait()
 
 	// Safe to close now: captureLoop is the sole sender on outPCM and it has

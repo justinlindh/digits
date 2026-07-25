@@ -37,6 +37,7 @@ type mockCallbacks struct {
 	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
 	initiateCallErr    error             // injected error for InitiateCall
 	voicemailAutoAnswers     int
+	voicemailAutoAnswerFails bool // true = VoicemailAutoAnswer reports failure
 	voicemailPickups         int
 	voicemailRecordEnded     int
 	voicemailEnabled         func() (bool, time.Duration) // nil = (false, 0)
@@ -170,10 +171,11 @@ func (m *mockCallbacks) OnCallReturnAbandon() {
 	defer m.mu.Unlock()
 	m.callReturnAbandons++
 }
-func (m *mockCallbacks) VoicemailAutoAnswer() {
+func (m *mockCallbacks) VoicemailAutoAnswer() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voicemailAutoAnswers++
+	return !m.voicemailAutoAnswerFails
 }
 func (m *mockCallbacks) VoicemailPickup() {
 	m.mu.Lock()
@@ -2613,5 +2615,64 @@ func TestPlaybackEntryClearsDigits(t *testing.T) {
 
 	if got := c.digitsForTest(); got != "" {
 		t.Errorf("expected digits to be cleared after playback entry, got %q", got)
+	}
+}
+
+// TestController_HangupSignalDuringCalling verifies that a hangup arriving
+// while ringing out gets the same audible treatment as a busy: without the
+// CALLING case the signal was silently ignored and the caller looped
+// ringback until a manual hang-up.
+func TestController_HangupSignalDuringCalling(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := newTestController(cb, "")
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("DIAL:5551234")
+
+	if c.State() != StateCALLING {
+		t.Fatalf("expected CALLING, got %s", c.State())
+	}
+
+	c.HandleSignal("hangup", "")
+
+	if c.State() != StateCALLING {
+		t.Errorf("expected to stay in CALLING awaiting hook-on, got %s", c.State())
+	}
+	tones := cb.Tones()
+	if len(tones) == 0 || tones[len(tones)-1] != "BUSY" {
+		t.Errorf("expected SendTone(BUSY) on hangup during CALLING, got tones %v", tones)
+	}
+}
+
+// TestController_RingTimeoutAutoAnswerFailureRevertsToIdle verifies that a
+// failed voicemail auto-answer (offer lost to a reconnect, store missing)
+// reverts the controller to IDLE and hangs up, instead of stranding the
+// callee in VOICEMAIL_GREETING while the server keeps the call live.
+func TestController_RingTimeoutAutoAnswerFailureRevertsToIdle(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailAutoAnswerFails: true,
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 50 * time.Millisecond
+		},
+	}
+	c := newTestController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	if c.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", c.State())
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	if c.State() != StateIDLE {
+		t.Errorf("expected IDLE after failed auto-answer, got %s", c.State())
+	}
+	if cb.VoicemailAutoAnswers() != 1 {
+		t.Errorf("expected 1 VoicemailAutoAnswer attempt, got %d", cb.VoicemailAutoAnswers())
+	}
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall to notify caller and server, got %d", cb.Hangups())
 	}
 }

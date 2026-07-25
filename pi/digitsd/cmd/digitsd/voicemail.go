@@ -214,7 +214,11 @@ func (d *daemonCallbacks) VoicemailPickup() {
 //     outgoing greeting (custom .frames if recorded, otherwise the embedded
 //     default WAV) followed by the prompt beep, then mutes the outbound mic
 //     and transitions the controller into the recording state.
-func (d *daemonCallbacks) VoicemailAutoAnswer() {
+//
+// Returns true only when the call went live. Any failure returns false and
+// the controller reverts VOICEMAIL_GREETING to IDLE and issues the hangup,
+// which also tears down whatever this function set up along the way.
+func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -224,11 +228,11 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 
 	if d.pendingOffer == "" {
 		slog.Warn("voicemail: no pending offer, aborting auto-answer", "caller", caller)
-		return
+		return false
 	}
 	if d.voicemailStore == nil {
 		slog.Warn("voicemail: store not available, aborting auto-answer", "caller", caller)
-		return
+		return false
 	}
 
 	t0 := time.Now()
@@ -247,7 +251,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
 		slog.Error("voicemail: new peer manager failed", "caller", caller, "error", err)
-		return
+		return false
 	}
 
 	vmPM := d.peerMgr
@@ -413,7 +417,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	if err != nil {
 		slog.Error("voicemail: accept offer failed", "caller", caller, "error", err)
 		close(sdpSent)
-		return
+		return false
 	}
 
 	for _, candidate := range d.pendingICE {
@@ -433,11 +437,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {
 		slog.Error("voicemail: begin recording failed", "caller", caller, "error", err)
-		d.mu.Unlock()
-		d.ctrl.Reset()
-		d.HangupCall()
-		d.mu.Lock()
-		return
+		return false
 	}
 	d.recorderMu.Lock()
 	d.recorder = rec
@@ -447,11 +447,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("voicemail: pipeline start failed", "caller", caller, "error", err)
-			d.mu.Unlock()
-			d.ctrl.Reset()
-			d.HangupCall()
-			d.mu.Lock()
-			return
+			return false
 		}
 		d.startEncodeLoop()
 	}
@@ -482,6 +478,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	}()
 
 	slog.Info("voicemail: auto-answered", "caller", caller, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
+	return true
 }
 
 // VoicemailRecordEnded is invoked when the recorder finalizes itself (max
