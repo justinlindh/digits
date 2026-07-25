@@ -14,6 +14,10 @@ on:
       - "pi/**"
       - ".github/workflows/pi-release.yml"
       - "pi/.releaserc.cjs"
+  # Daily catch-up for releases stranded by the behind-remote race
+  # (see server-release.yml).
+  schedule:
+    - cron: "27 9 * * *"
 
 # See server-release.yml for why this exists. Serializes release runs
 # so back-to-back merges don't race semantic-release into silently
@@ -41,6 +45,9 @@ jobs:
 
       - uses: actions/checkout@v7
         with:
+          # Branch tip, not github.sha: semantic-release refuses to publish
+          # from a checkout that is behind remote main (see server-release.yml).
+          ref: main
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
