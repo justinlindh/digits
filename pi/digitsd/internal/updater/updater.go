@@ -26,10 +26,11 @@ const (
 	// that accepts the connection then stalls before replying, the classic
 	// half-open hang, without capping the time spent streaming a large body.
 	responseHeaderTimeout = 30 * time.Second
-	// downloadTimeout is the generous absolute deadline for a single artifact
-	// download. Large enough for a multi-megabyte binary over a slow link, but
+	// downloadTimeout is the absolute deadline for a single download attempt,
 	// finite so a connection that goes silent mid-body cannot latch update
-	// state forever.
+	// state forever. An attempt that dies mid-body keeps its partial .tmp and
+	// the next attempt resumes it with a Range request, so a link too slow to
+	// finish inside one deadline still converges across attempts.
 	downloadTimeout = 10 * time.Minute
 )
 
@@ -207,15 +208,45 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 		return "", fmt.Errorf("create staging dir: %w", err)
 	}
 	destPath := filepath.Join(u.cfg.StagingDir, localName)
+	tmpPath := destPath + ".tmp"
+	// The marker records which artifact the partial belongs to, so a new
+	// release under the same localName restarts from zero instead of gluing
+	// bytes from two different binaries together.
+	markerPath := tmpPath + ".sha"
 
-	// Bound the whole download so a connection that stalls mid-body cannot
-	// block io.Copy forever and latch update state. The deadline covers the
-	// body stream too: cancelling the context unblocks an in-flight Read.
+	// Resume a partial from a prior attempt when it provably belongs to the
+	// same artifact. Seed the hash from the bytes already on disk so the final
+	// digest covers the whole file.
+	var offset int64
+	h := sha256.New()
+	if expectedSHA != "" {
+		if marker, err := os.ReadFile(markerPath); err == nil && string(marker) == expectedSHA {
+			if prev, err := os.Open(tmpPath); err == nil {
+				n, cerr := io.Copy(h, prev)
+				_ = prev.Close()
+				if cerr == nil {
+					offset = n
+				}
+			}
+		}
+	}
+	if offset == 0 {
+		h = sha256.New()
+		_ = os.Remove(tmpPath)
+		_ = os.Remove(markerPath)
+	}
+
+	// Bound the attempt so a connection that stalls mid-body cannot block
+	// io.Copy forever and latch update state. The deadline covers the body
+	// stream too: cancelling the context unblocks an in-flight Read.
 	ctx, cancel := context.WithTimeout(context.Background(), u.downloadTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", url, err)
+	}
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 	}
 	resp, err := u.client.Do(req)
 	if err != nil {
@@ -223,35 +254,60 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	switch {
+	case offset > 0 && resp.StatusCode == http.StatusPartialContent:
+		// Server honored the resume; append below.
+	case resp.StatusCode == http.StatusOK:
+		// Fresh download, or the server ignored the Range header and sent the
+		// full body. Either way start over from byte zero.
+		offset = 0
+		h = sha256.New()
+	default:
+		if offset > 0 {
+			// Most likely 416 from a partial the server can no longer satisfy
+			// (e.g. a complete-but-unrenamed leftover). Drop it so the next
+			// attempt starts clean instead of erroring forever.
+			_ = os.Remove(tmpPath)
+			_ = os.Remove(markerPath)
+		}
 		return "", fmt.Errorf("download %s: status %d", url, resp.StatusCode)
 	}
 
-	f, err := os.Create(destPath + ".tmp")
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if offset > 0 {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	}
+	f, err := os.OpenFile(tmpPath, flags, 0644)
 	if err != nil {
 		return "", fmt.Errorf("create temp: %w", err)
 	}
+	if expectedSHA != "" && offset == 0 {
+		if err := os.WriteFile(markerPath, []byte(expectedSHA), 0644); err != nil {
+			_ = f.Close()
+			return "", fmt.Errorf("write resume marker: %w", err)
+		}
+	}
 
-	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
+		// Keep the partial and its marker: the next attempt resumes here.
 		_ = f.Close()
-		_ = os.Remove(destPath + ".tmp")
 		return "", fmt.Errorf("download write: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(destPath + ".tmp")
 		return "", fmt.Errorf("flush download: %w", err)
 	}
 
 	gotSHA := hex.EncodeToString(h.Sum(nil))
 	if expectedSHA != "" && gotSHA != expectedSHA {
-		_ = os.Remove(destPath + ".tmp")
+		_ = os.Remove(tmpPath)
+		_ = os.Remove(markerPath)
 		return "", fmt.Errorf("sha256 mismatch: got %s, want %s", gotSHA, expectedSHA)
 	}
 
-	if err := os.Rename(destPath+".tmp", destPath); err != nil {
+	if err := os.Rename(tmpPath, destPath); err != nil {
 		return "", fmt.Errorf("rename: %w", err)
 	}
+	_ = os.Remove(markerPath)
 
 	slog.Info("updater: downloaded", "file", localName, "url", url, "sha256", gotSHA)
 	return destPath, nil
