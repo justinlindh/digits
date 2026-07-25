@@ -113,7 +113,7 @@ type Callbacks interface {
 	SendRingPattern(id int)                               // Send RING:PATTERN:<id> for distinctive ring
 	OnCallReturnCancel()                                  // *89 detected: cancel pending call-return retry
 	OnCallReturnAbandon()                                 // CALL_RETURN exited via on-hook without dialing
-	VoicemailAutoAnswer() bool                            // Auto-answer into voicemail; false = aborted before answering, controller must revert and hang up
+	VoicemailAutoAnswer() bool                            // Auto-answer into voicemail; false = call did not go live, controller must revert and hang up
 	VoicemailPickup()                                     // User picked up during voicemail greeting/recording
 	VoicemailRecordEnded()                                // Recording completed or stopped
 	VoicemailEnabled() (enabled bool, ringTimeout time.Duration) // Reports whether voicemail is enabled and the ring timeout
@@ -827,9 +827,9 @@ func (c *Controller) ringTimeoutWatcher(gen uint64, d time.Duration) {
 	if c.cb.VoicemailAutoAnswer() {
 		return
 	}
-	// Auto-answer could not proceed (the caller's offer never arrived, e.g.
-	// it was lost to a websocket reconnect). Without this revert the callee
-	// is stranded in VOICEMAIL_GREETING and the server keeps the call live,
+	// The call never went live (the caller's offer was lost to a websocket
+	// reconnect, or answer setup failed). Without this revert the callee is
+	// stranded in VOICEMAIL_GREETING and the server keeps the call live,
 	// answering every redial with busy until the socket drops. Send the
 	// hangup ourselves so caller and server converge.
 	c.mu.Lock()
@@ -837,6 +837,14 @@ func (c *Controller) ringTimeoutWatcher(gen uint64, d time.Duration) {
 	if c.state != StateVOICEMAIL_GREETING || c.ringTimeoutGen != gen {
 		return
 	}
+	c.abortVoicemailLocked()
+}
+
+// abortVoicemailLocked reverts an in-progress voicemail state to IDLE and
+// tears the call down. The single canonical greeting-abort sequence, shared
+// by the auto-answer failure revert and the caller-hangup path. Caller must
+// hold c.mu.
+func (c *Controller) abortVoicemailLocked() {
 	c.state = StateIDLE
 	c.cb.SendTone(ToneStop)
 	c.cb.SendLED(LEDOff)
@@ -884,10 +892,7 @@ func (c *Controller) onSignalHangup(sender string) {
 		c.cb.SendLED(LEDOff)
 	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		slog.Info("phone: caller hung up during voicemail")
-		c.state = StateIDLE
-		c.cb.SendTone(ToneStop)
-		c.cb.SendLED(LEDOff)
-		c.cb.HangupCall()
+		c.abortVoicemailLocked()
 	case StateCONNECTED:
 		c.state = StateREMOTE_HANGUP
 		c.cb.HangupCall()

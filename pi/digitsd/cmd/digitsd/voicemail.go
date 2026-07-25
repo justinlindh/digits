@@ -214,6 +214,10 @@ func (d *daemonCallbacks) VoicemailPickup() {
 //     outgoing greeting (custom .frames if recorded, otherwise the embedded
 //     default WAV) followed by the prompt beep, then mutes the outbound mic
 //     and transitions the controller into the recording state.
+//
+// Returns true only when the call went live. Any failure returns false and
+// the controller reverts VOICEMAIL_GREETING to IDLE and issues the hangup,
+// which also tears down whatever this function set up along the way.
 func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -413,8 +417,6 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	if err != nil {
 		slog.Error("voicemail: accept offer failed", "caller", caller, "error", err)
 		close(sdpSent)
-		// No answer was sent: the controller reverts and issues the hangup,
-		// which also tears down the peer manager created above.
 		return false
 	}
 
@@ -435,14 +437,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {
 		slog.Error("voicemail: begin recording failed", "caller", caller, "error", err)
-		d.mu.Unlock()
-		d.ctrl.Reset()
-		d.HangupCall()
-		d.mu.Lock()
-		// The answer already went out, so this path owns its own teardown
-		// (reset + hangup above); report handled so the caller of
-		// VoicemailAutoAnswer does not layer a second revert on top.
-		return true
+		return false
 	}
 	d.recorderMu.Lock()
 	d.recorder = rec
@@ -452,13 +447,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("voicemail: pipeline start failed", "caller", caller, "error", err)
-			d.mu.Unlock()
-			d.ctrl.Reset()
-			d.HangupCall()
-			d.mu.Lock()
-			// Same as the BeginRecording failure above: answered and
-			// self-torn-down, so no controller revert.
-			return true
+			return false
 		}
 		d.startEncodeLoop()
 	}
