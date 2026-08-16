@@ -12,7 +12,9 @@ concurrency:
 
 jobs:
   check-trailers:
-    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    # Fork-head PRs run GitHub-hosted so fork code never reaches the
+    # self-hosted pool; same-repo PRs and dispatches follow RUNNER_LABEL.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
         with:
