@@ -238,6 +238,13 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	t0 := time.Now()
 	d.mixer.StopTone()
 
+	// prepareAnswer has already consumed the caller's trickled ICE candidates
+	// into a peer configured for ordinary live playback. Voicemail needs its
+	// own remote-track handler so it can record encoded frames, which means it
+	// cannot promote that peer as AnswerCall does. Retire it now, but preserve
+	// and replay its remote candidates into the voicemail peer below.
+	preparedRemoteICE := d.discardPreAnswerForVoicemail()
+
 	offerSDP := d.pendingOffer
 	d.pendingOffer = ""
 	d.pendingCaller = ""
@@ -420,11 +427,13 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 		return false
 	}
 
-	for _, candidate := range d.pendingICE {
+	remoteCandidates := append(preparedRemoteICE, d.pendingICE...)
+	for _, candidate := range remoteCandidates {
 		if err := d.peerMgr.AddICECandidate(candidate); err != nil {
 			slog.Warn("voicemail: add queued ICE candidate failed", "caller", caller, "error", err)
 		}
 	}
+	slog.Info("voicemail: replayed remote ICE candidates", "caller", caller, "count", len(remoteCandidates))
 	d.pendingICE = nil
 
 	sendSignal(d.sig, &sigclient.Message{
