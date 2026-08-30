@@ -159,6 +159,7 @@ func (d *daemonCallbacks) AnswerCall() {
 		d.preAnswer.answerSDP = ""
 		d.preAnswer.webrtcCh = nil
 		d.preAnswer.candidates = nil
+		d.preAnswer.remoteCandidates = nil
 		d.preAnswer.caller = ""
 		d.pendingOffer = ""
 		d.pendingCaller = ""
@@ -586,10 +587,13 @@ func (d *daemonCallbacks) prepareAnswer() {
 	}
 
 	// Add any ICE candidates that arrived before we were ready.
+	remoteCandidates := make([]string, 0, len(d.pendingICE))
 	for _, candidate := range d.pendingICE {
 		if err := pm.AddICECandidate(candidate); err != nil {
 			slog.Warn("prepareAnswer: add queued ICE candidate failed", "error", err)
+			continue
 		}
+		remoteCandidates = append(remoteCandidates, candidate)
 	}
 	d.pendingICE = nil
 
@@ -597,6 +601,7 @@ func (d *daemonCallbacks) prepareAnswer() {
 	d.preAnswer.answerSDP = answerSDP
 	d.preAnswer.webrtcCh = webrtcCh
 	d.preAnswer.candidates = nil // will be populated by OnICECandidate as they gather
+	d.preAnswer.remoteCandidates = remoteCandidates
 	d.preAnswer.caller = caller
 
 	slog.Info("prepareAnswer: ready", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
@@ -615,11 +620,29 @@ func (d *daemonCallbacks) cleanupPreAnswer() {
 	d.preAnswer.answerSDP = ""
 	d.preAnswer.webrtcCh = nil
 	d.preAnswer.candidates = nil
+	d.preAnswer.remoteCandidates = nil
 	d.preAnswer.caller = ""
 	if caller != "" {
 		d.mixer.RemoveWebRTCSource(caller)
 	}
 	pm.CloseAsync("cleanupPreAnswer", caller)
+}
+
+// discardPreAnswerForVoicemail retires the ordinary live-call pre-answer peer
+// and returns copies of the remote ICE candidates it already consumed.
+//
+// Voicemail cannot promote that peer directly because prepareAnswer installed
+// the live playback OnRemoteTrack handler, while voicemail must tee encoded
+// packets into its recorder before a local pickup. Its replacement peer still
+// needs every caller candidate that arrived during ringing; Pion does not
+// expose candidates after AddICECandidate, so preAnswer retains them for this
+// explicit replay.
+//
+// Must be called with d.mu held.
+func (d *daemonCallbacks) discardPreAnswerForVoicemail() []string {
+	remoteCandidates := append([]string(nil), d.preAnswer.remoteCandidates...)
+	d.cleanupPreAnswer()
+	return remoteCandidates
 }
 
 // triggerHangup dispatches a hangup to the controller from a fresh goroutine.
