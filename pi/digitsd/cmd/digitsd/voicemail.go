@@ -433,7 +433,9 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 			slog.Warn("voicemail: add queued ICE candidate failed", "caller", caller, "error", err)
 		}
 	}
-	slog.Info("voicemail: replayed remote ICE candidates", "caller", caller, "count", len(remoteCandidates))
+	if len(remoteCandidates) > 0 {
+		slog.Info("voicemail: replayed remote ICE candidates", "caller", caller, "count", len(remoteCandidates))
+	}
 	d.pendingICE = nil
 
 	sendSignal(d.sig, &sigclient.Message{
