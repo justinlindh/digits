@@ -239,9 +239,10 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 				slog.Warn("webrtc: add ICE candidate failed", "error", err)
 			}
 		} else if d.preAnswer.peerMgr != nil {
-			if err := d.preAnswer.peerMgr.AddICECandidate(msg.Candidate); err != nil {
-				slog.Warn("webrtc: add ICE candidate to preAnswer failed", "error", err)
-			}
+			// Banked, not applied: the prepared peer must not start
+			// connectivity checks before its answer is sent (see the
+			// preAnswer.remoteCandidates comment).
+			d.preAnswer.remoteCandidates = append(d.preAnswer.remoteCandidates, msg.Candidate)
 		} else {
 			d.pendingICE = append(d.pendingICE, msg.Candidate)
 			slog.Info("queued ICE candidate (peerMgr not ready)", "total_queued", len(d.pendingICE))

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
+	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 )
 
@@ -62,6 +63,56 @@ func TestPrepareAnswer_CreatesState(t *testing.T) {
 		t.Fatal("expected pendingICE to be cleared")
 	}
 
+	_ = pm.Close()
+}
+
+func TestPrepareAnswer_BanksRemoteCandidatesWithoutApplying(t *testing.T) {
+	d := newTestDaemon()
+	offer := newCallerOffer(t)
+	cand := "candidate:1 1 udp 2130706431 127.0.0.1 5000 typ host"
+
+	d.mu.Lock()
+	d.pendingCaller = "3140001"
+	d.pendingOffer = offer
+	d.pendingICE = []string{cand}
+	d.prepareAnswer()
+	banked := append([]string(nil), d.preAnswer.remoteCandidates...)
+	pendingICE := d.pendingICE
+	pm := d.preAnswer.peerMgr
+	d.mu.Unlock()
+
+	if len(banked) != 1 || banked[0] != cand {
+		t.Fatalf("banked remote candidates = %v, want the queued caller candidate", banked)
+	}
+	if pendingICE != nil {
+		t.Fatal("expected pendingICE to be consumed into the bank")
+	}
+	_ = pm.Close()
+}
+
+func TestDispatch_BanksICEWhilePrepared(t *testing.T) {
+	d := newTestDaemon()
+	offer := newCallerOffer(t)
+	cand := "candidate:2 1 udp 2130706431 127.0.0.1 5002 typ host"
+
+	d.mu.Lock()
+	d.pendingCaller = "3140001"
+	d.pendingOffer = offer
+	d.prepareAnswer()
+	pm := d.preAnswer.peerMgr
+	d.mu.Unlock()
+	if pm == nil {
+		t.Fatal("setup: prepareAnswer did not create a peer")
+	}
+
+	d.handleSignal(&sigclient.Message{Type: sigclient.TypeICE, From: "3140001", Candidate: cand})
+
+	d.mu.Lock()
+	banked := append([]string(nil), d.preAnswer.remoteCandidates...)
+	d.mu.Unlock()
+	if len(banked) != 1 || banked[0] != cand {
+		t.Fatalf("banked remote candidates = %v, want the dispatched candidate", banked)
+	}
 	_ = pm.Close()
 }
 

@@ -258,11 +258,12 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	// built fresh at answer time would start gathering only after the answer,
 	// and across NAT it cannot reliably complete connectivity checks; on LAN,
 	// host candidates hide the difference.
-	pm, _, answerSDP, candidates, ok := d.takePreAnswer()
+	pa, ok := d.takePreAnswer()
 	if !ok {
 		slog.Error("voicemail: no answerable peer, aborting auto-answer", "caller", caller)
 		return false
 	}
+	pm := pa.pm
 
 	d.pendingOffer = ""
 	d.pendingCaller = ""
@@ -296,8 +297,9 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	// before the caller has received the answer sent below.
 	pm.SetOnRemoteTrack(d.voicemailRemoteTrackHandler(pm, caller, webrtcCh))
 
-	d.sendPreparedAnswer(pm, caller, answerSDP, candidates)
-	slog.Info("voicemail: promoted prepared peer", "caller", caller, "flushed_candidates", len(candidates))
+	d.sendPreparedAnswer(pa)
+	slog.Info("voicemail: promoted prepared peer", "caller", caller,
+		"flushed_candidates", len(pa.localCandidates), "applied_remote_candidates", len(pa.remoteCandidates))
 
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {

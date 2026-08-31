@@ -128,7 +128,15 @@ type daemonCallbacks struct {
 		peerMgr    *owebrtc.PeerManager
 		answerSDP  string
 		candidates []string // local ICE candidates gathered during ring, sent on answer
-		caller     string   // pendingCaller at time of preparation
+		// remoteCandidates banks the caller's trickled candidates, applied to
+		// the peer only at answer time. Applying them during the ring would
+		// start connectivity checks against a caller that cannot respond
+		// until it has our answer: the checks exhaust and stop, the NAT
+		// mappings they punched go cold, and by answer time neither side can
+		// reach the other. Deferring application makes both agents start
+		// checking together at answer, the same dynamics as a live call.
+		remoteCandidates []string
+		caller           string // pendingCaller at time of preparation
 	}
 	iceServers           []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode            bool                      // read from DIGITS_DEBUG env at startup
