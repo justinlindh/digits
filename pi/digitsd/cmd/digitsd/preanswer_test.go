@@ -163,6 +163,37 @@ func TestCleanupPreAnswer_ClosesAndZeros(t *testing.T) {
 	}
 }
 
+func TestEnsureLivePreAnswer_PreservesBankOnDiscard(t *testing.T) {
+	d := newTestDaemon()
+	offer := newCallerOffer(t)
+	cand := "candidate:4 1 udp 2130706431 127.0.0.1 5006 typ host"
+
+	d.mu.Lock()
+	d.pendingCaller = "3140001"
+	d.pendingOffer = offer
+	d.pendingICE = []string{cand}
+	d.prepareAnswer()
+	pm := d.preAnswer.pm
+	d.mu.Unlock()
+	if pm == nil {
+		t.Fatal("setup: prepareAnswer did not create a peer")
+	}
+	_ = pm.Close()
+
+	d.mu.Lock()
+	d.ensureLivePreAnswer()
+	discarded := d.preAnswer.pm == nil
+	banked := append([]string(nil), d.pendingICE...)
+	d.mu.Unlock()
+
+	if !discarded {
+		t.Fatal("expected the dead prepared peer to be discarded")
+	}
+	if len(banked) != 1 || banked[0] != cand {
+		t.Fatalf("pendingICE = %v, want the caller's bank preserved for the rebuild", banked)
+	}
+}
+
 func TestCleanupPreAnswer_NoopWhenEmpty(t *testing.T) {
 	d := newTestDaemon()
 	d.mu.Lock()

@@ -2,6 +2,7 @@ package owebrtc
 
 import (
 	"testing"
+	"strings"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -263,5 +264,13 @@ func TestPeerManager_OfferAnswer_WithTimeouts(t *testing.T) {
 	}
 	if err := caller.SetAnswer(answer); err != nil {
 		t.Fatal(err)
+	}
+
+	// Guard against a construction path that loses pion's default codec
+	// registration: the negotiated SDP must carry Opus on both sides.
+	for name, sdp := range map[string]string{"offer": offer, "answer": answer} {
+		if !strings.Contains(strings.ToLower(sdp), "opus") {
+			t.Fatalf("expected %s SDP to negotiate opus", name)
+		}
 	}
 }

@@ -630,7 +630,12 @@ func (d *daemonCallbacks) ensureLivePreAnswer() {
 	switch d.preAnswer.pm.ConnectionState() {
 	case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
 		slog.Warn("webrtc: prepared peer already dead, discarding", "caller", d.preAnswer.caller)
+		// Keep the candidate bank across the discard: the caller is still
+		// on the line, will not re-trickle without an ICE restart, and the
+		// rebuilt peer needs their candidates to connect.
+		bank := d.pendingICE
 		d.cleanupPreAnswer()
+		d.pendingICE = bank
 	default:
 	}
 }
