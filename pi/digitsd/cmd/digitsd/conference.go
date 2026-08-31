@@ -173,7 +173,7 @@ func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
 // log lines ("initiator"/"responder"); the loop body is identical for both.
 // pm owns its own decoder, so the loop is safe to run concurrently per peer.
 func (d *daemonCallbacks) wireMeshRemoteTrack(pm *owebrtc.PeerManager, phone, role string, webrtcCh chan []int16) {
-	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+	pm.SetOnRemoteTrack(func(track *webrtc.TrackRemote) {
 		slog.Info("conference: remote track attached", "phone", phone, "role", role)
 		go func() {
 			defer recoverGoroutine("conf-remote-track-" + phone)
@@ -205,7 +205,7 @@ func (d *daemonCallbacks) wireMeshRemoteTrack(pm *owebrtc.PeerManager, phone, ro
 				}
 			}
 		}()
-	}
+	})
 }
 
 func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
@@ -249,7 +249,7 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 	// Wire ICE candidate forwarding. Gate candidates behind SDP send so the
 	// remote side has a local description before processing candidates.
 	sdpSent := make(chan struct{})
-	pm.OnICECandidate = func(candidate string) {
+	pm.SetOnICECandidate(func(candidate string) {
 		<-sdpSent
 		sendSignal(sig, &sigclient.Message{
 			Type:      sigclient.TypeICE,
@@ -257,9 +257,9 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 			ConfID:    confID,
 			Candidate: candidate,
 		})
-	}
+	})
 
-	pm.OnConnectionState = d.meshReporterOnConnected(pm, phone)
+	pm.SetOnConnectionState(d.meshReporterOnConnected(pm, phone))
 
 	// Past the early return above, this is always the initiator path: create
 	// and send the SDP offer to the peer. The responder never reaches here.
@@ -338,7 +338,7 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 
 	// Gate ICE candidates behind answer SDP send.
 	sdpSent := make(chan struct{})
-	pm.OnICECandidate = func(candidate string) {
+	pm.SetOnICECandidate(func(candidate string) {
 		<-sdpSent
 		d.mu.Lock()
 		sig := d.sig
@@ -349,9 +349,9 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 			ConfID:    confID,
 			Candidate: candidate,
 		})
-	}
+	})
 
-	pm.OnConnectionState = d.meshReporterOnConnected(pm, peer)
+	pm.SetOnConnectionState(d.meshReporterOnConnected(pm, peer))
 
 	// Use confID from the offer rather than ctrl.ConferenceID() so the answer
 	// is correctly routed even if ConferenceMember has not yet arrived.

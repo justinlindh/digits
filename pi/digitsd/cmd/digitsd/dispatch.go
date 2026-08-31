@@ -241,8 +241,6 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 		} else if d.preAnswer.peerMgr != nil {
 			if err := d.preAnswer.peerMgr.AddICECandidate(msg.Candidate); err != nil {
 				slog.Warn("webrtc: add ICE candidate to preAnswer failed", "error", err)
-			} else {
-				d.preAnswer.remoteCandidates = append(d.preAnswer.remoteCandidates, msg.Candidate)
 			}
 		} else {
 			d.pendingICE = append(d.pendingICE, msg.Candidate)

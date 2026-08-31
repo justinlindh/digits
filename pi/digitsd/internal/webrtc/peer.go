@@ -26,10 +26,33 @@ type PeerManager struct {
 	zeroBuf       []int16      // reusable zero slice for muted encodes; allocated once at construction
 	closeFn       func() error // when set, Close calls this instead of pc.Close (test seam)
 
-	// Callbacks (set by caller before use):
-	OnRemoteTrack     func(track *webrtc.TrackRemote)
-	OnICECandidate    func(candidate string)
-	OnConnectionState func(state webrtc.PeerConnectionState)
+	// Callbacks, set via the SetOn* methods. Held atomically because pion
+	// invokes them from its own goroutines while callers may swap them on a
+	// live peer (e.g. promoting a ring-phase peer into a call whose handlers
+	// differ from the prepared ones).
+	onRemoteTrack     atomic.Value // func(track *webrtc.TrackRemote)
+	onICECandidate    atomic.Value // func(candidate string)
+	onConnectionState atomic.Value // func(state webrtc.PeerConnectionState)
+}
+
+// SetOnRemoteTrack installs the remote-track callback. Safe to call on a live
+// peer: pion fires OnTrack only once media arrives, so a swap that completes
+// before the remote end can send media never loses the event.
+func (m *PeerManager) SetOnRemoteTrack(fn func(track *webrtc.TrackRemote)) {
+	m.onRemoteTrack.Store(fn)
+}
+
+// SetOnICECandidate installs the local-candidate callback. Safe to call on a
+// live peer; a candidate gathered mid-swap invokes whichever handler was
+// current when it fired.
+func (m *PeerManager) SetOnICECandidate(fn func(candidate string)) {
+	m.onICECandidate.Store(fn)
+}
+
+// SetOnConnectionState installs the connection-state callback. Safe to call
+// on a live peer.
+func (m *PeerManager) SetOnConnectionState(fn func(state webrtc.PeerConnectionState)) {
+	m.onConnectionState.Store(fn)
 }
 
 // NewPeerManager creates a PeerManager with the given ICE configuration.
@@ -96,8 +119,8 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 
 	// OnTrack: remote track received
 	pc.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		if m.OnRemoteTrack != nil {
-			m.OnRemoteTrack(t)
+		if fn, ok := m.onRemoteTrack.Load().(func(*webrtc.TrackRemote)); ok {
+			fn(t)
 		}
 	})
 
@@ -106,16 +129,16 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 		if c == nil {
 			return
 		}
-		if m.OnICECandidate != nil {
-			m.OnICECandidate(c.ToJSON().Candidate)
+		if fn, ok := m.onICECandidate.Load().(func(string)); ok {
+			fn(c.ToJSON().Candidate)
 		}
 	})
 
 	// OnConnectionStateChange: connection state changed
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		slog.Info("webrtc: connection state changed", "state", state)
-		if m.OnConnectionState != nil {
-			m.OnConnectionState(state)
+		if fn, ok := m.onConnectionState.Load().(func(webrtc.PeerConnectionState)); ok {
+			fn(state)
 		}
 	})
 

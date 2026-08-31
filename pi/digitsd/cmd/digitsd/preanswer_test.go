@@ -2,7 +2,6 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
@@ -41,7 +40,6 @@ func TestPrepareAnswer_CreatesState(t *testing.T) {
 	pm := d.preAnswer.peerMgr
 	answerSDP := d.preAnswer.answerSDP
 	callerField := d.preAnswer.caller
-	remoteCandidates := d.preAnswer.remoteCandidates
 	pendingICE := d.pendingICE
 	d.mu.Unlock()
 
@@ -53,9 +51,6 @@ func TestPrepareAnswer_CreatesState(t *testing.T) {
 	}
 	if callerField != "3140001" {
 		t.Fatalf("expected caller 3140001, got %q", callerField)
-	}
-	if len(remoteCandidates) != 1 || remoteCandidates[0] != "candidate:1 1 udp 2130706431 127.0.0.1 5000 typ host" {
-		t.Fatalf("remote candidates = %v, want queued caller candidate", remoteCandidates)
 	}
 	if pendingICE != nil {
 		t.Fatal("expected pendingICE to be cleared")
@@ -157,39 +152,3 @@ func TestCleanupPreAnswer_NoopWhenEmpty(t *testing.T) {
 	d.mu.Unlock()
 }
 
-func TestDiscardPreAnswerForVoicemail_PreservesRemoteICE(t *testing.T) {
-	d := newTestDaemon()
-	closed := make(chan struct{}, 1)
-	d.preAnswer.peerMgr = owebrtc.NewPeerManagerWithCloseFn(func() error {
-		closed <- struct{}{}
-		return nil
-	})
-	d.preAnswer.caller = "3140001"
-	d.preAnswer.remoteCandidates = []string{"candidate-one", "candidate-two"}
-
-	d.mu.Lock()
-	got := d.discardPreAnswerForVoicemail()
-	d.mu.Unlock()
-
-	if len(got) != 2 || got[0] != "candidate-one" || got[1] != "candidate-two" {
-		t.Fatalf("remote candidates = %v, want both prepared candidates", got)
-	}
-	if d.preAnswer.peerMgr != nil {
-		t.Fatal("expected prepared peer to be detached")
-	}
-	if d.preAnswer.remoteCandidates != nil {
-		t.Fatal("expected prepared remote candidates to be cleared")
-	}
-
-	select {
-	case <-closed:
-	case <-time.After(time.Second):
-		t.Fatal("prepared peer was not closed")
-	}
-
-	// The returned slice must not alias state that a later call can mutate.
-	d.preAnswer.remoteCandidates = append(d.preAnswer.remoteCandidates, "later-call")
-	if len(got) != 2 {
-		t.Fatalf("returned candidates changed after state reuse: %v", got)
-	}
-}

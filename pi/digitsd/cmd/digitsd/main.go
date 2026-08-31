@@ -128,15 +128,8 @@ type daemonCallbacks struct {
 		peerMgr    *owebrtc.PeerManager
 		answerSDP  string
 		webrtcCh   chan []int16
-		candidates []string // local ICE candidates gathered during ring, sent on pickup
-		// remoteCandidates mirrors every caller candidate already consumed by
-		// peerMgr. Voicemail needs a different OnRemoteTrack handler, so it
-		// replaces the prepared peer at auto-answer time and replays these into
-		// the replacement. Without this copy the voicemail peer starts with no
-		// remote candidates and commonly remains in ICE "connecting" until it
-		// fails.
-		remoteCandidates []string
-		caller           string // pendingCaller at time of preparation
+		candidates []string // local ICE candidates gathered during ring, sent on answer
+		caller     string   // pendingCaller at time of preparation
 	}
 	iceServers           []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode            bool                      // read from DIGITS_DEBUG env at startup
@@ -199,6 +192,11 @@ type daemonCallbacks struct {
 	recorder          *voicemail.Recorder
 	recorderMu        sync.Mutex
 	voicemailWebRTCCh chan []int16
+
+	// voicemailConnectTimeout bounds how long the greeting goroutine waits
+	// for the voicemail peer to reach Connected before abandoning the call.
+	// Zero means the default; tests set it to park or hurry the wait.
+	voicemailConnectTimeout time.Duration
 
 	// voicemailRecordArmed gates the OnRemoteTrack tee into the recorder.
 	// The remote track reaches its live phase right after the call
