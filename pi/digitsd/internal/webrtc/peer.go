@@ -35,22 +35,19 @@ type PeerManager struct {
 	onConnectionState atomic.Value // func(state webrtc.PeerConnectionState)
 }
 
-// SetOnRemoteTrack installs the remote-track callback. Safe to call on a live
-// peer: pion fires OnTrack only once media arrives, so a swap that completes
-// before the remote end can send media never loses the event.
+// SetOnRemoteTrack installs the remote-track callback. Pion fires OnTrack
+// only once media arrives, so a swap that completes before the remote end can
+// send media never loses the event.
 func (m *PeerManager) SetOnRemoteTrack(fn func(track *webrtc.TrackRemote)) {
 	m.onRemoteTrack.Store(fn)
 }
 
-// SetOnICECandidate installs the local-candidate callback. Safe to call on a
-// live peer; a candidate gathered mid-swap invokes whichever handler was
-// current when it fired.
+// SetOnICECandidate installs the local-candidate callback.
 func (m *PeerManager) SetOnICECandidate(fn func(candidate string)) {
 	m.onICECandidate.Store(fn)
 }
 
-// SetOnConnectionState installs the connection-state callback. Safe to call
-// on a live peer.
+// SetOnConnectionState installs the connection-state callback.
 func (m *PeerManager) SetOnConnectionState(fn func(state webrtc.PeerConnectionState)) {
 	m.onConnectionState.Store(fn)
 }

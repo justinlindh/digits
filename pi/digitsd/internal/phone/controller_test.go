@@ -1977,6 +1977,47 @@ func TestController_RingTimeoutFiresAutoAnswer(t *testing.T) {
 	}
 }
 
+// TestController_AbortVoicemailGreeting verifies the daemon-facing abort:
+// from VOICEMAIL_GREETING it runs the canonical abort sequence (IDLE, LED
+// off, hangup) and reports true; from any other state it is a reporting
+// no-op.
+func TestController_AbortVoicemailGreeting(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 50 * time.Millisecond
+		},
+	}
+	c := newTestController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	time.Sleep(100 * time.Millisecond)
+	if c.State() != StateVOICEMAIL_GREETING {
+		t.Fatalf("setup: expected VOICEMAIL_GREETING, got %s", c.State())
+	}
+
+	if !c.AbortVoicemailGreeting() {
+		t.Fatal("expected abort to report true from VOICEMAIL_GREETING")
+	}
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after abort, got %s", c.State())
+	}
+	cb.mu.Lock()
+	hangups := cb.hangups
+	leds := append([]string(nil), cb.leds...)
+	cb.mu.Unlock()
+	if hangups != 1 {
+		t.Fatalf("expected 1 HangupCall, got %d", hangups)
+	}
+	if len(leds) == 0 || leds[len(leds)-1] != LEDOff {
+		t.Fatalf("expected final LED %q, got %v", LEDOff, leds)
+	}
+
+	if c.AbortVoicemailGreeting() {
+		t.Fatal("expected abort to report false outside VOICEMAIL_GREETING")
+	}
+}
+
 // TestController_RingTimeoutCanceledByHookOff verifies that picking up the
 // handset during ringing cancels the voicemail auto-answer goroutine.
 func TestController_RingTimeoutCanceledByHookOff(t *testing.T) {

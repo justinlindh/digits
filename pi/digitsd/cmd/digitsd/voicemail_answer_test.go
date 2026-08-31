@@ -5,17 +5,17 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
+	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
-	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 	"github.com/pion/webrtc/v4"
 )
 
 // newVoicemailTestDaemon builds a daemon ready for VoicemailAutoAnswer: an
 // unconnected signaling client (sends fail gracefully and are logged), a real
-// store in a temp dir, and a pre-built pipeline so the ALSA-backed Start path
-// is skipped. The connect timeout is huge so the greeting goroutine parks
-// instead of touching the nil controller.
+// store in a temp dir, a pre-built pipeline so the ALSA-backed Start path is
+// skipped, and a real idle controller so the greeting goroutine's abandon
+// path (woken when the test closes the peer) is a clean no-op.
 func newVoicemailTestDaemon(t *testing.T) *daemonCallbacks {
 	t.Helper()
 	d := newTestDaemon()
@@ -26,22 +26,13 @@ func newVoicemailTestDaemon(t *testing.T) *daemonCallbacks {
 	}
 	d.voicemailStore = store
 	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
-	d.voicemailConnectTimeout = time.Hour
+	d.ctrl = phone.NewController(d, "7390000")
 	return d
 }
 
 func TestVoicemailAutoAnswer_PromotesPreparedPeer(t *testing.T) {
 	d := newVoicemailTestDaemon(t)
-
-	caller, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = caller.Close() }()
-	offer, err := caller.CreateOffer()
-	if err != nil {
-		t.Fatal(err)
-	}
+	offer := newCallerOffer(t)
 
 	d.mu.Lock()
 	d.pendingCaller = "3140001"
@@ -86,18 +77,9 @@ func TestVoicemailAutoAnswer_PromotesPreparedPeer(t *testing.T) {
 	_ = promoted.Close()
 }
 
-func TestVoicemailAutoAnswer_BuildsPeerWithoutPrepared(t *testing.T) {
+func TestVoicemailAutoAnswer_PreparesWhenNotPrepared(t *testing.T) {
 	d := newVoicemailTestDaemon(t)
-
-	caller, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = caller.Close() }()
-	offer, err := caller.CreateOffer()
-	if err != nil {
-		t.Fatal(err)
-	}
+	offer := newCallerOffer(t)
 
 	d.mu.Lock()
 	d.pendingCaller = "3140001"
@@ -112,7 +94,7 @@ func TestVoicemailAutoAnswer_BuildsPeerWithoutPrepared(t *testing.T) {
 	pm := d.peerMgr
 	d.mu.Unlock()
 	if pm == nil {
-		t.Fatal("expected a PeerManager to be built")
+		t.Fatal("expected a PeerManager to be prepared and promoted")
 	}
 	_ = pm.Close()
 }
@@ -135,24 +117,20 @@ func TestWaitForPeerConnected_Timeout(t *testing.T) {
 	}
 }
 
-func TestWaitForPeerConnected_FailedShortCircuits(t *testing.T) {
-	state := func() webrtc.PeerConnectionState { return webrtc.PeerConnectionStateFailed }
-	start := time.Now()
-	if waitForPeerConnected(state, time.Hour) {
-		t.Fatal("expected false for a failed peer")
-	}
-	if time.Since(start) > time.Second {
-		t.Fatal("expected a failed peer to short-circuit, not wait out the timeout")
-	}
-}
-
-func TestWaitForPeerConnected_ClosedShortCircuits(t *testing.T) {
-	state := func() webrtc.PeerConnectionState { return webrtc.PeerConnectionStateClosed }
-	start := time.Now()
-	if waitForPeerConnected(state, time.Hour) {
-		t.Fatal("expected false for a closed peer")
-	}
-	if time.Since(start) > time.Second {
-		t.Fatal("expected a closed peer to short-circuit, not wait out the timeout")
+func TestWaitForPeerConnected_TerminalStatesShortCircuit(t *testing.T) {
+	for _, st := range []webrtc.PeerConnectionState{
+		webrtc.PeerConnectionStateFailed,
+		webrtc.PeerConnectionStateClosed,
+	} {
+		t.Run(st.String(), func(t *testing.T) {
+			state := func() webrtc.PeerConnectionState { return st }
+			start := time.Now()
+			if waitForPeerConnected(state, time.Hour) {
+				t.Fatalf("expected false for a %s peer", st)
+			}
+			if time.Since(start) > time.Second {
+				t.Fatalf("expected a %s peer to short-circuit, not wait out the timeout", st)
+			}
+		})
 	}
 }

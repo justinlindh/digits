@@ -18,19 +18,18 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
-	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 
 	"github.com/pion/webrtc/v4"
 )
 
-// defaultVoicemailConnectTimeout bounds how long the greeting goroutine waits
-// for the voicemail peer to reach Connected before abandoning the call. Live
-// calls on this network connect in well under a second; a peer that has not
-// connected after this long never will, and holding the caller in dead air
-// any longer just wastes their patience.
-const defaultVoicemailConnectTimeout = 10 * time.Second
+// voicemailConnectTimeout bounds how long the greeting goroutine waits for
+// the voicemail peer to reach Connected before abandoning the call. Live
+// calls connect in well under a second; a peer that has not connected after
+// this long never will, and holding the caller in dead air any longer just
+// wastes their patience.
+const voicemailConnectTimeout = 10 * time.Second
 
 // playAnnouncementSequence plays multiple one-shot tones in sequence, waiting
 // for each to finish before starting the next. Blocks the calling goroutine
@@ -208,8 +207,8 @@ func (d *daemonCallbacks) VoicemailPickup() {
 // VoicemailAutoAnswer completes the SDP/ICE handshake for an unanswered call,
 // opens a voicemail recorder, brings up the audio pipeline, and plays the
 // outgoing greeting followed by the prompt beep. It promotes the pre-created
-// ring-phase peer just like AnswerCall's fast path (falling back to building
-// one only if prepareAnswer failed) but diverges in three ways:
+// ring-phase peer just like AnswerCall's fast path (retrying prepareAnswer
+// first if the ring-phase attempt failed) but diverges in three ways:
 //
 //  1. No mixer.AddWebRTCSource: caller audio does not play through the
 //     earpiece during voicemail. Decoded PCM is sent to voicemailWebRTCCh
@@ -246,7 +245,25 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	t0 := time.Now()
 	d.mixer.StopTone()
 
-	offerSDP := d.pendingOffer
+	// A prepared ring-phase peer normally exists (dispatch runs prepareAnswer
+	// the moment the offer arrives). Retry here only if that failed, before
+	// the pending offer is cleared, since prepareAnswer reads it.
+	if d.preAnswer.peerMgr == nil {
+		d.prepareAnswer()
+	}
+
+	// Promote the prepared peer, exactly as AnswerCall's fast path does. The
+	// prepared peer spent the whole ring gathering local ICE candidates, and
+	// they are flushed to the caller the moment the answer goes out. A peer
+	// built fresh at answer time would start gathering only after the answer,
+	// and across NAT it cannot reliably complete connectivity checks; on LAN,
+	// host candidates hide the difference.
+	pm, _, answerSDP, candidates, ok := d.takePreAnswer()
+	if !ok {
+		slog.Error("voicemail: no answerable peer, aborting auto-answer", "caller", caller)
+		return false
+	}
+
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 
@@ -254,45 +271,12 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	d.isCaller = false
 	d.isRestartingICE = false
 
-	// Promote the pre-created peer from the ring phase whenever one exists,
-	// exactly as AnswerCall's fast path does. The prepared peer spent the
-	// whole ring gathering local ICE candidates, and they are flushed to the
-	// caller the moment the answer goes out. A peer rebuilt here would start
-	// gathering only after the answer, and across NAT it cannot reliably
-	// complete connectivity checks; on LAN, host candidates hide the
-	// difference. The build-from-scratch branch below survives only as the
-	// fallback for a failed or absent prepareAnswer.
-	promoted := d.preAnswer.peerMgr != nil
-	var localCandidates []string
-	var answerSDP string
-	if promoted {
-		pm := d.preAnswer.peerMgr
-		answerSDP = d.preAnswer.answerSDP
-		localCandidates = d.preAnswer.candidates
-		d.preAnswer.peerMgr = nil
-		d.preAnswer.answerSDP = ""
-		d.preAnswer.webrtcCh = nil
-		d.preAnswer.candidates = nil
-		d.preAnswer.caller = ""
-		// prepareAnswer routed decoded caller audio to the earpiece mixer for
-		// a live pickup. Voicemail keeps the earpiece silent, so detach that
-		// source; decoded PCM goes to voicemailWebRTCCh below instead.
-		d.mixer.RemoveWebRTCSource(caller)
-		d.peerMgr = pm
-	} else {
-		iceCfg := owebrtc.NewICEConfig(d.iceServers)
-		var err error
-		d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
-		if err != nil {
-			slog.Error("voicemail: new peer manager failed", "caller", caller, "error", err)
-			return false
-		}
-	}
-
-	vmPM := d.peerMgr
-	d.peerMgr.SetOnConnectionState(func(state webrtc.PeerConnectionState) {
-		d.handleConnectionStateChange(vmPM, state)
-	})
+	// prepareAnswer routed decoded caller audio to the earpiece mixer for a
+	// live pickup. Voicemail keeps the earpiece silent, so detach that
+	// source; decoded PCM goes to voicemailWebRTCCh below instead. The
+	// connection-state handler prepareAnswer installed carries over as is.
+	d.mixer.RemoveWebRTCSource(caller)
+	d.peerMgr = pm
 
 	// Decoded PCM target. Buffered so brief mixer-attach delays during
 	// pickup do not block the decode loop; overflow is dropped via the
@@ -307,10 +291,78 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	// prepend the greeting duration of caller-side silence to the message.
 	d.voicemailRecordArmed.Store(false)
 
-	// On the promoted peer this replaces prepareAnswer's live-playback
-	// handler. That is safe: pion fires OnTrack only once media arrives, and
-	// media cannot flow before the caller has received the answer sent below.
-	d.peerMgr.SetOnRemoteTrack(func(track *webrtc.TrackRemote) {
+	// This replaces prepareAnswer's live-playback handler. That is safe:
+	// pion fires OnTrack only once media arrives, and media cannot flow
+	// before the caller has received the answer sent below.
+	pm.SetOnRemoteTrack(d.voicemailRemoteTrackHandler(pm, caller, webrtcCh))
+
+	d.sendPreparedAnswer(pm, caller, answerSDP, candidates)
+	slog.Info("voicemail: promoted prepared peer", "caller", caller, "flushed_candidates", len(candidates))
+
+	rec, err := d.voicemailStore.BeginRecording()
+	if err != nil {
+		slog.Error("voicemail: begin recording failed", "caller", caller, "error", err)
+		return false
+	}
+	d.recorderMu.Lock()
+	d.recorder = rec
+	d.recorderMu.Unlock()
+
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("voicemail: pipeline start failed", "caller", caller, "error", err)
+			return false
+		}
+		d.startEncodeLoop()
+	}
+
+	// Greeting + beep playback runs off the main goroutine so the daemon
+	// stays responsive. The flow: 500ms lead-in silence so the caller's
+	// audio path is up and decoded, then the greeting (custom .frames or
+	// the default WAV), then the 500ms beep, a 500ms tail before muting
+	// the local mic (so the caller's mic doesn't bleed into the outbound
+	// stream), then transition to recording.
+	pipeline := d.pipeline
+	ctrl := d.ctrl
+	go func() {
+		defer recoverGoroutine("voicemail-greeting")
+		// Wait for media to actually be deliverable before speaking. The
+		// track write path surfaces no error on an unconnected transport, so
+		// playing on a wall clock alone means a caller on a peer that never
+		// connects hears dead air while the greeting plays into the void.
+		if !waitForPeerConnected(pm.ConnectionState, voicemailConnectTimeout) {
+			if ctrl.AbortVoicemailGreeting() {
+				slog.Error("voicemail: peer never connected, abandoned call", "caller", caller, "timeout", voicemailConnectTimeout)
+			}
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+		d.playVoicemailGreeting(pipeline)
+		pipeline.PlayGreetingBeep(500 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
+		if ctrl.State() == phone.StateVOICEMAIL_GREETING {
+			pipeline.SetMuted(true)
+			// Arm the recorder tee now: the beep has finished, so the next
+			// caller frames are the actual message. Anything the remote
+			// track delivered earlier (the caller listening to the greeting)
+			// was decoded but not recorded.
+			d.voicemailRecordArmed.Store(true)
+			ctrl.SetVoicemailRecording()
+		}
+	}()
+
+	slog.Info("voicemail: auto-answered", "caller", caller, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
+	return true
+}
+
+// voicemailRemoteTrackHandler mirrors remoteTrackHandler for the voicemail
+// path: the same three-phase startup (discard until the pipeline is up,
+// drain to live, then feed) but the live phase also tees the raw Opus
+// payload into the recorder once the greeting goroutine arms it, and
+// decoded PCM goes to webrtcCh rather than an earpiece mixer source.
+func (d *daemonCallbacks) voicemailRemoteTrackHandler(pm *owebrtc.PeerManager, caller string, webrtcCh chan []int16) func(*webrtc.TrackRemote) {
+	return func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("voicemail-record")
 			var frameCount int
@@ -334,7 +386,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 					slog.Info("voicemail: remote track ended waiting for pipeline", "caller", caller, "discarded", discarded)
 					return
 				}
-				vmPM.Decode(pkt.Payload) //nolint:errcheck
+				pm.Decode(pkt.Payload) //nolint:errcheck
 				discarded++
 			}
 
@@ -352,7 +404,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 					slog.Info("voicemail: remote track ended during drain", "caller", caller)
 					return
 				}
-				vmPM.Decode(pkt.Payload) //nolint:errcheck
+				pm.Decode(pkt.Payload) //nolint:errcheck
 				drained++
 				lastSeq = pkt.SequenceNumber
 				if readTime > 5*time.Millisecond {
@@ -372,7 +424,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 					return
 				}
 
-				pcm, decErr := vmPM.Decode(pkt.Payload)
+				pcm, decErr := pm.Decode(pkt.Payload)
 				if decErr != nil {
 					slog.Warn("voicemail: decode error", "caller", caller, "error", decErr, "pkt_bytes", len(pkt.Payload))
 					continue
@@ -426,7 +478,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 					}
 				}
 
-				if vmPM.InboundMuted() {
+				if pm.InboundMuted() {
 					continue
 				}
 				frame := make([]int16, len(pcm))
@@ -438,133 +490,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 				}
 			}
 		}()
-	})
-
-	if promoted {
-		// The prepared peer's remote candidates were already applied as they
-		// arrived, and its answer SDP was created during the ring. Send the
-		// answer, flush the candidates banked while ringing, then let any
-		// stragglers flow directly (mirrors AnswerCall's fast path).
-		sendSignal(d.sig, &sigclient.Message{
-			Type: sigclient.TypeAnswer,
-			To:   caller,
-			SDP:  answerSDP,
-		})
-		for _, candidate := range localCandidates {
-			sendSignal(d.sig, &sigclient.Message{
-				Type:      sigclient.TypeICE,
-				To:        caller,
-				Candidate: candidate,
-			})
-		}
-		slog.Info("voicemail: promoted prepared peer", "caller", caller, "flushed_candidates", len(localCandidates))
-		vmPM.SetOnICECandidate(func(candidate string) {
-			sendSignal(d.currentSig(), &sigclient.Message{
-				Type:      sigclient.TypeICE,
-				To:        caller,
-				Candidate: candidate,
-			})
-		})
-	} else {
-		// Gate ICE candidates behind answer SDP send (mirrors AnswerCall).
-		sdpSent := make(chan struct{})
-		vmPM.SetOnICECandidate(func(candidate string) {
-			<-sdpSent
-			sendSignal(d.currentSig(), &sigclient.Message{
-				Type:      sigclient.TypeICE,
-				To:        caller,
-				Candidate: candidate,
-			})
-		})
-
-		var err error
-		answerSDP, err = vmPM.AcceptOffer(offerSDP)
-		if err != nil {
-			slog.Error("voicemail: accept offer failed", "caller", caller, "error", err)
-			close(sdpSent)
-			return false
-		}
-
-		for _, candidate := range d.pendingICE {
-			if err := vmPM.AddICECandidate(candidate); err != nil {
-				slog.Warn("voicemail: add queued ICE candidate failed", "caller", caller, "error", err)
-			}
-		}
-		if len(d.pendingICE) > 0 {
-			slog.Info("voicemail: replayed remote ICE candidates", "caller", caller, "count", len(d.pendingICE))
-		}
-
-		sendSignal(d.sig, &sigclient.Message{
-			Type: sigclient.TypeAnswer,
-			To:   caller,
-			SDP:  answerSDP,
-		})
-		close(sdpSent)
 	}
-	d.pendingICE = nil
-
-	rec, err := d.voicemailStore.BeginRecording()
-	if err != nil {
-		slog.Error("voicemail: begin recording failed", "caller", caller, "error", err)
-		return false
-	}
-	d.recorderMu.Lock()
-	d.recorder = rec
-	d.recorderMu.Unlock()
-
-	if d.pipeline == nil {
-		d.pipeline = d.newPipeline()
-		if err := d.pipeline.Start(); err != nil {
-			slog.Error("voicemail: pipeline start failed", "caller", caller, "error", err)
-			return false
-		}
-		d.startEncodeLoop()
-	}
-
-	// Greeting + beep playback runs off the main goroutine so the daemon
-	// stays responsive. The flow: 500ms lead-in silence so the caller's
-	// audio path is up and decoded, then the greeting (custom .frames or
-	// the default WAV), then the 500ms beep, a 500ms tail before muting
-	// the local mic (so the caller's mic doesn't bleed into the outbound
-	// stream), then transition to recording.
-	pipeline := d.pipeline
-	ctrl := d.ctrl
-	connectTimeout := d.voicemailConnectTimeout
-	if connectTimeout == 0 {
-		connectTimeout = defaultVoicemailConnectTimeout
-	}
-	go func() {
-		defer recoverGoroutine("voicemail-greeting")
-		// Wait for media to actually be deliverable before speaking. The
-		// track write path surfaces no error on an unconnected transport, so
-		// playing on a wall clock alone means a caller on a peer that never
-		// connects hears dead air while the greeting plays into the void.
-		if !waitForPeerConnected(vmPM.ConnectionState, connectTimeout) {
-			if ctrl.State() != phone.StateVOICEMAIL_GREETING {
-				return // call already torn down while waiting
-			}
-			slog.Error("voicemail: peer never connected, abandoning", "caller", caller, "timeout", connectTimeout)
-			ctrl.Reset()
-			d.HangupCall()
-			return
-		}
-		time.Sleep(500 * time.Millisecond)
-		d.playVoicemailGreeting(pipeline)
-		pipeline.PlayGreetingBeep(500 * time.Millisecond)
-		time.Sleep(500 * time.Millisecond)
-		if ctrl.State() == phone.StateVOICEMAIL_GREETING {
-			pipeline.SetMuted(true)
-			// Arm the recorder tee now: the beep has finished, so the next
-			// caller frames are the actual message. Anything the remote
-			// track delivered earlier (the caller listening to the greeting)
-			// was decoded but not recorded.
-			d.voicemailRecordArmed.Store(true)
-			ctrl.SetVoicemailRecording()
-		}
-	}()
-
-	slog.Info("voicemail: auto-answered", "caller", caller, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
-	return true
 }
 
 // waitForPeerConnected polls the given connection-state accessor until the

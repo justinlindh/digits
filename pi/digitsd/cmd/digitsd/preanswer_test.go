@@ -18,19 +18,25 @@ func newTestDaemon() *daemonCallbacks {
 	return d
 }
 
-func TestPrepareAnswer_CreatesState(t *testing.T) {
-	d := newTestDaemon()
-
+// newCallerOffer creates a throwaway caller-side peer (closed at test end)
+// and returns its SDP offer, ready to feed a callee under test.
+func newCallerOffer(t *testing.T) string {
+	t.Helper()
 	caller, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = caller.Close() }()
-
+	t.Cleanup(func() { _ = caller.Close() })
 	offer, err := caller.CreateOffer()
 	if err != nil {
 		t.Fatal(err)
 	}
+	return offer
+}
+
+func TestPrepareAnswer_CreatesState(t *testing.T) {
+	d := newTestDaemon()
+	offer := newCallerOffer(t)
 
 	d.mu.Lock()
 	d.pendingCaller = "3140001"
@@ -76,17 +82,7 @@ func TestPrepareAnswer_NoopWithoutOffer(t *testing.T) {
 
 func TestPrepareAnswer_Idempotent(t *testing.T) {
 	d := newTestDaemon()
-
-	caller, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = caller.Close() }()
-
-	offer, err := caller.CreateOffer()
-	if err != nil {
-		t.Fatal(err)
-	}
+	offer := newCallerOffer(t)
 
 	d.mu.Lock()
 	d.pendingCaller = "3140001"
@@ -106,17 +102,7 @@ func TestPrepareAnswer_Idempotent(t *testing.T) {
 
 func TestCleanupPreAnswer_ClosesAndZeros(t *testing.T) {
 	d := newTestDaemon()
-
-	caller, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = caller.Close() }()
-
-	offer, err := caller.CreateOffer()
-	if err != nil {
-		t.Fatal(err)
-	}
+	offer := newCallerOffer(t)
 
 	d.mu.Lock()
 	d.pendingCaller = "3140001"
@@ -151,4 +137,3 @@ func TestCleanupPreAnswer_NoopWhenEmpty(t *testing.T) {
 	d.cleanupPreAnswer()
 	d.mu.Unlock()
 }
-

@@ -127,7 +127,6 @@ type daemonCallbacks struct {
 	preAnswer struct {
 		peerMgr    *owebrtc.PeerManager
 		answerSDP  string
-		webrtcCh   chan []int16
 		candidates []string // local ICE candidates gathered during ring, sent on answer
 		caller     string   // pendingCaller at time of preparation
 	}
@@ -192,11 +191,6 @@ type daemonCallbacks struct {
 	recorder          *voicemail.Recorder
 	recorderMu        sync.Mutex
 	voicemailWebRTCCh chan []int16
-
-	// voicemailConnectTimeout bounds how long the greeting goroutine waits
-	// for the voicemail peer to reach Connected before abandoning the call.
-	// Zero means the default; tests set it to park or hurry the wait.
-	voicemailConnectTimeout time.Duration
 
 	// voicemailRecordArmed gates the OnRemoteTrack tee into the recorder.
 	// The remote track reaches its live phase right after the call
