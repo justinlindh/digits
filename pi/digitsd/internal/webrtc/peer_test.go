@@ -1,8 +1,8 @@
 package owebrtc
 
 import (
-	"testing"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/pion/webrtc/v4"
