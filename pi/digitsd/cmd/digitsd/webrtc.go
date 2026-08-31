@@ -52,14 +52,14 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	d.isRestartingICE = false
 
 	callerPM := d.peerMgr
-	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
+	d.peerMgr.SetOnConnectionState(func(state webrtc.PeerConnectionState) {
 		d.handleConnectionStateChange(callerPM, state)
-	}
+	})
 
 	// Handle remote audio track
 	webrtcCh := d.mixer.AddWebRTCSource(targetNumber)
 	localPM := d.peerMgr // capture for goroutine; each PM owns its decoder
-	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+	d.peerMgr.SetOnRemoteTrack(func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("caller-remote-track")
 			// Live playback: decode and feed into mixer
@@ -89,18 +89,18 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 				}
 			}
 		}()
-	}
+	})
 
 	// Gate ICE candidates behind SDP send: candidates must not arrive before the offer.
 	sdpSent := make(chan struct{})
-	d.peerMgr.OnICECandidate = func(candidate string) {
+	d.peerMgr.SetOnICECandidate(func(candidate string) {
 		<-sdpSent
 		sendSignal(d.currentSig(), &sigclient.Message{
 			Type:      sigclient.TypeICE,
 			To:        targetNumber,
 			Candidate: candidate,
 		})
-	}
+	})
 
 	// Create offer (returns immediately; ICE trickles via OnICECandidate)
 	offer, err := d.peerMgr.CreateOffer()
@@ -146,46 +146,16 @@ func (d *daemonCallbacks) AnswerCall() {
 	if d.preAnswer.peerMgr != nil {
 		t0 := time.Now()
 		d.mixer.StopTone()
-		caller := d.preAnswer.caller
-		pm := d.preAnswer.peerMgr
-		answerSDP := d.preAnswer.answerSDP
-		candidates := d.preAnswer.candidates
+		pm, caller, answerSDP, candidates, _ := d.takePreAnswer()
 
 		d.peerMgr = pm
 		d.callPeer = caller
 		d.isCaller = false
 		d.isRestartingICE = false
-		d.preAnswer.peerMgr = nil
-		d.preAnswer.answerSDP = ""
-		d.preAnswer.webrtcCh = nil
-		d.preAnswer.candidates = nil
-		d.preAnswer.remoteCandidates = nil
-		d.preAnswer.caller = ""
 		d.pendingOffer = ""
 		d.pendingCaller = ""
 
-		sendSignal(d.sig, &sigclient.Message{
-			Type: sigclient.TypeAnswer,
-			To:   caller,
-			SDP:  answerSDP,
-		})
-
-		for _, candidate := range candidates {
-			sendSignal(d.sig, &sigclient.Message{
-				Type:      sigclient.TypeICE,
-				To:        caller,
-				Candidate: candidate,
-			})
-		}
-
-		// Any candidates still gathering after promotion should be sent directly.
-		pm.OnICECandidate = func(candidate string) {
-			sendSignal(d.currentSig(), &sigclient.Message{
-				Type:      sigclient.TypeICE,
-				To:        caller,
-				Candidate: candidate,
-			})
-		}
+		d.sendPreparedAnswer(pm, caller, answerSDP, candidates)
 
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
@@ -219,23 +189,23 @@ func (d *daemonCallbacks) AnswerCall() {
 	}
 
 	answerPM := d.peerMgr
-	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
+	d.peerMgr.SetOnConnectionState(func(state webrtc.PeerConnectionState) {
 		d.handleConnectionStateChange(answerPM, state)
-	}
+	})
 
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
-	d.peerMgr.OnRemoteTrack = d.remoteTrackHandler(answerPM, webrtcCh)
+	d.peerMgr.SetOnRemoteTrack(d.remoteTrackHandler(answerPM, webrtcCh))
 
 	// Gate ICE candidates behind answer SDP send.
 	sdpSent := make(chan struct{})
-	d.peerMgr.OnICECandidate = func(candidate string) {
+	d.peerMgr.SetOnICECandidate(func(candidate string) {
 		<-sdpSent
 		sendSignal(d.currentSig(), &sigclient.Message{
 			Type:      sigclient.TypeICE,
 			To:        caller,
 			Candidate: candidate,
 		})
-	}
+	})
 
 	// Accept the offer and generate answer (returns immediately; ICE trickles via OnICECandidate)
 	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
@@ -562,21 +532,21 @@ func (d *daemonCallbacks) prepareAnswer() {
 		return
 	}
 
-	pm.OnConnectionState = func(state webrtc.PeerConnectionState) {
+	pm.SetOnConnectionState(func(state webrtc.PeerConnectionState) {
 		d.handleConnectionStateChange(pm, state)
-	}
+	})
 
 	// Collect local ICE candidates into the preAnswer slice (NOT sent to caller).
-	pm.OnICECandidate = func(candidate string) {
+	pm.SetOnICECandidate(func(candidate string) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if d.preAnswer.peerMgr == pm {
 			d.preAnswer.candidates = append(d.preAnswer.candidates, candidate)
 		}
-	}
+	})
 
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
-	pm.OnRemoteTrack = d.remoteTrackHandler(pm, webrtcCh)
+	pm.SetOnRemoteTrack(d.remoteTrackHandler(pm, webrtcCh))
 
 	answerSDP, err := pm.AcceptOffer(offerSDP)
 	if err != nil {
@@ -587,62 +557,80 @@ func (d *daemonCallbacks) prepareAnswer() {
 	}
 
 	// Add any ICE candidates that arrived before we were ready.
-	remoteCandidates := make([]string, 0, len(d.pendingICE))
 	for _, candidate := range d.pendingICE {
 		if err := pm.AddICECandidate(candidate); err != nil {
 			slog.Warn("prepareAnswer: add queued ICE candidate failed", "error", err)
-			continue
 		}
-		remoteCandidates = append(remoteCandidates, candidate)
 	}
 	d.pendingICE = nil
 
 	d.preAnswer.peerMgr = pm
 	d.preAnswer.answerSDP = answerSDP
-	d.preAnswer.webrtcCh = webrtcCh
 	d.preAnswer.candidates = nil // will be populated by OnICECandidate as they gather
-	d.preAnswer.remoteCandidates = remoteCandidates
 	d.preAnswer.caller = caller
 
 	slog.Info("prepareAnswer: ready", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
 }
 
+// takePreAnswer detaches and returns the prepared ring-phase peer state,
+// zeroing preAnswer so no later path can see stale fields. ok is false when
+// nothing was prepared. The mixer source added by prepareAnswer stays
+// attached; a caller that does not keep live playback must remove it itself.
+// Must be called with d.mu held.
+func (d *daemonCallbacks) takePreAnswer() (pm *owebrtc.PeerManager, caller, answerSDP string, candidates []string, ok bool) {
+	if d.preAnswer.peerMgr == nil {
+		return nil, "", "", nil, false
+	}
+	pm = d.preAnswer.peerMgr
+	caller = d.preAnswer.caller
+	answerSDP = d.preAnswer.answerSDP
+	candidates = d.preAnswer.candidates
+	d.preAnswer.peerMgr = nil
+	d.preAnswer.answerSDP = ""
+	d.preAnswer.candidates = nil
+	d.preAnswer.caller = ""
+	return pm, caller, answerSDP, candidates, true
+}
+
+// sendPreparedAnswer completes the handshake for a promoted ring-phase peer:
+// it sends the answer SDP, flushes the local ICE candidates banked while
+// ringing, and installs direct forwarding for any still gathering. The answer
+// must reach the caller before any candidate does; both live pickup and
+// voicemail auto-answer rely on this ordering. Must be called with d.mu held.
+func (d *daemonCallbacks) sendPreparedAnswer(pm *owebrtc.PeerManager, caller, answerSDP string, candidates []string) {
+	sendSignal(d.sig, &sigclient.Message{
+		Type: sigclient.TypeAnswer,
+		To:   caller,
+		SDP:  answerSDP,
+	})
+	for _, candidate := range candidates {
+		sendSignal(d.sig, &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        caller,
+			Candidate: candidate,
+		})
+	}
+	pm.SetOnICECandidate(func(candidate string) {
+		sendSignal(d.currentSig(), &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        caller,
+			Candidate: candidate,
+		})
+	})
+}
+
 // cleanupPreAnswer tears down any pre-created PeerConnection (e.g. caller
 // hung up during ring). Must be called with d.mu held.
 func (d *daemonCallbacks) cleanupPreAnswer() {
-	if d.preAnswer.peerMgr == nil {
+	pm, caller, _, _, ok := d.takePreAnswer()
+	if !ok {
 		return
 	}
-	slog.Info("cleanupPreAnswer: tearing down pre-created peer", "caller", d.preAnswer.caller)
-	pm := d.preAnswer.peerMgr
-	caller := d.preAnswer.caller
-	d.preAnswer.peerMgr = nil
-	d.preAnswer.answerSDP = ""
-	d.preAnswer.webrtcCh = nil
-	d.preAnswer.candidates = nil
-	d.preAnswer.remoteCandidates = nil
-	d.preAnswer.caller = ""
+	slog.Info("cleanupPreAnswer: tearing down pre-created peer", "caller", caller)
 	if caller != "" {
 		d.mixer.RemoveWebRTCSource(caller)
 	}
 	pm.CloseAsync("cleanupPreAnswer", caller)
-}
-
-// discardPreAnswerForVoicemail retires the ordinary live-call pre-answer peer
-// and returns copies of the remote ICE candidates it already consumed.
-//
-// Voicemail cannot promote that peer directly because prepareAnswer installed
-// the live playback OnRemoteTrack handler, while voicemail must tee encoded
-// packets into its recorder before a local pickup. Its replacement peer still
-// needs every caller candidate that arrived during ringing; Pion does not
-// expose candidates after AddICECandidate, so preAnswer retains them for this
-// explicit replay.
-//
-// Must be called with d.mu held.
-func (d *daemonCallbacks) discardPreAnswerForVoicemail() []string {
-	remoteCandidates := append([]string(nil), d.preAnswer.remoteCandidates...)
-	d.cleanupPreAnswer()
-	return remoteCandidates
 }
 
 // triggerHangup dispatches a hangup to the controller from a fresh goroutine.

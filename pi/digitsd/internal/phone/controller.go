@@ -840,6 +840,22 @@ func (c *Controller) ringTimeoutWatcher(gen uint64, d time.Duration) {
 	c.abortVoicemailLocked()
 }
 
+// AbortVoicemailGreeting abandons an in-progress voicemail greeting via the
+// canonical abort sequence and reports whether it did. False means the phone
+// had already left VOICEMAIL_GREETING (caller hung up, homeowner picked up)
+// and nothing was done. Called by the daemon when the voicemail peer never
+// reaches a connected state, so the caller is released instead of being held
+// in dead air.
+func (c *Controller) AbortVoicemailGreeting() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state != StateVOICEMAIL_GREETING {
+		return false
+	}
+	c.abortVoicemailLocked()
+	return true
+}
+
 // abortVoicemailLocked reverts an in-progress voicemail state to IDLE and
 // tears the call down. The single canonical greeting-abort sequence, shared
 // by the auto-answer failure revert and the caller-hangup path. Caller must
