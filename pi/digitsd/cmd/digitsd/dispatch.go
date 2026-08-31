@@ -238,13 +238,11 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 			if err := d.peerMgr.AddICECandidate(msg.Candidate); err != nil {
 				slog.Warn("webrtc: add ICE candidate failed", "error", err)
 			}
-		} else if d.preAnswer.peerMgr != nil {
-			if err := d.preAnswer.peerMgr.AddICECandidate(msg.Candidate); err != nil {
-				slog.Warn("webrtc: add ICE candidate to preAnswer failed", "error", err)
-			}
 		} else {
+			// Banked until answer time, whether or not a prepared peer
+			// exists yet (see the prepareAnswer doc comment).
 			d.pendingICE = append(d.pendingICE, msg.Candidate)
-			slog.Info("queued ICE candidate (peerMgr not ready)", "total_queued", len(d.pendingICE))
+			slog.Info("banked ICE candidate", "total_banked", len(d.pendingICE))
 		}
 		d.mu.Unlock()
 	case sigclient.TypeUpdateTrigger:

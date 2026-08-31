@@ -58,6 +58,22 @@ func (m *PeerManager) SetOnConnectionState(fn func(state webrtc.PeerConnectionSt
 // decoder (to eliminate shared-buffer races when multiple peers decode concurrently
 // in a conference).
 func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
+	return newPeerManager(iceCfg, webrtc.SettingEngine{})
+}
+
+// NewPeerManagerWithTimeouts creates a PeerManager whose ICE agent uses the
+// given disconnected/failed/keepalive timeouts instead of pion's defaults.
+// Pion's failure deadline (disconnected+failed) runs from the moment the
+// agent enters its checking state, so a peer whose agent starts long before
+// its answer is sent (the ring-phase pre-answer peer) needs a deadline that
+// outlasts the longest configurable ring timeout plus connect margin.
+func NewPeerManagerWithTimeouts(iceCfg *ICEConfig, disconnected, failed, keepalive time.Duration) (*PeerManager, error) {
+	var se webrtc.SettingEngine
+	se.SetICETimeouts(disconnected, failed, keepalive)
+	return newPeerManager(iceCfg, se)
+}
+
+func newPeerManager(iceCfg *ICEConfig, se webrtc.SettingEngine) (*PeerManager, error) {
 	enc, err := codec.NewEncoder(48000, 1, 24000)
 	if err != nil {
 		return nil, fmt.Errorf("create opus encoder: %w", err)
@@ -75,7 +91,10 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 		zeroBuf: make([]int16, 960),
 	}
 
-	pc, err := webrtc.NewPeerConnection(iceCfg.WebRTCConfig())
+	// NewAPI fills in the same default codecs and env-driven logger that
+	// webrtc.NewPeerConnection uses; a zero SettingEngine means pion
+	// defaults, so this single path serves both constructors.
+	pc, err := webrtc.NewAPI(webrtc.WithSettingEngine(se)).NewPeerConnection(iceCfg.WebRTCConfig())
 	if err != nil {
 		return nil, fmt.Errorf("create peer connection: %w", err)
 	}

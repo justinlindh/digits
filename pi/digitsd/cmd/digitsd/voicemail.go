@@ -246,9 +246,11 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	d.mixer.StopTone()
 
 	// A prepared ring-phase peer normally exists (dispatch runs prepareAnswer
-	// the moment the offer arrives). Retry here only if that failed, before
-	// the pending offer is cleared, since prepareAnswer reads it.
-	if d.preAnswer.peerMgr == nil {
+	// the moment the offer arrives). Rebuild here if that failed or the
+	// prepared agent died, before the pending offer is cleared, since
+	// prepareAnswer reads it.
+	d.ensureLivePreAnswer()
+	if d.preAnswer.pm == nil {
 		d.prepareAnswer()
 	}
 
@@ -258,11 +260,12 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	// built fresh at answer time would start gathering only after the answer,
 	// and across NAT it cannot reliably complete connectivity checks; on LAN,
 	// host candidates hide the difference.
-	pm, _, answerSDP, candidates, ok := d.takePreAnswer()
+	pa, ok := d.takePreAnswer()
 	if !ok {
 		slog.Error("voicemail: no answerable peer, aborting auto-answer", "caller", caller)
 		return false
 	}
+	pm := pa.pm
 
 	d.pendingOffer = ""
 	d.pendingCaller = ""
@@ -296,8 +299,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	// before the caller has received the answer sent below.
 	pm.SetOnRemoteTrack(d.voicemailRemoteTrackHandler(pm, caller, webrtcCh))
 
-	d.sendPreparedAnswer(pm, caller, answerSDP, candidates)
-	slog.Info("voicemail: promoted prepared peer", "caller", caller, "flushed_candidates", len(candidates))
+	appliedRemote := len(d.pendingICE)
+	d.sendPreparedAnswer(pa)
+	slog.Info("voicemail: promoted prepared peer", "caller", caller,
+		"flushed_candidates", len(pa.localCandidates), "applied_remote_candidates", appliedRemote)
 
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {
