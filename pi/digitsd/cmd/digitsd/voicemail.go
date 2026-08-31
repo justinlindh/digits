@@ -246,9 +246,11 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	d.mixer.StopTone()
 
 	// A prepared ring-phase peer normally exists (dispatch runs prepareAnswer
-	// the moment the offer arrives). Retry here only if that failed, before
-	// the pending offer is cleared, since prepareAnswer reads it.
-	if d.preAnswer.peerMgr == nil {
+	// the moment the offer arrives). Rebuild here if that failed or the
+	// prepared agent died, before the pending offer is cleared, since
+	// prepareAnswer reads it.
+	d.ensureLivePreAnswer()
+	if d.preAnswer.pm == nil {
 		d.prepareAnswer()
 	}
 
@@ -297,9 +299,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 	// before the caller has received the answer sent below.
 	pm.SetOnRemoteTrack(d.voicemailRemoteTrackHandler(pm, caller, webrtcCh))
 
+	appliedRemote := len(d.pendingICE)
 	d.sendPreparedAnswer(pa)
 	slog.Info("voicemail: promoted prepared peer", "caller", caller,
-		"flushed_candidates", len(pa.localCandidates), "applied_remote_candidates", len(pa.remoteCandidates))
+		"flushed_candidates", len(pa.localCandidates), "applied_remote_candidates", appliedRemote)
 
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {

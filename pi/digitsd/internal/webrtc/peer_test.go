@@ -236,3 +236,32 @@ func TestUpdateICEServers(t *testing.T) {
 		t.Fatal("empty restart offer after UpdateICEServers")
 	}
 }
+
+// TestPeerManager_OfferAnswer_WithTimeouts is a construction smoke test: a
+// peer built with explicit ICE timeouts still negotiates SDP normally. The
+// timeout values themselves are not observable through pion's public API.
+func TestPeerManager_OfferAnswer_WithTimeouts(t *testing.T) {
+	callee, err := NewPeerManagerWithTimeouts(NewICEConfig(nil), 5*time.Second, 85*time.Second, 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = callee.Close() }()
+
+	caller, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = caller.Close() }()
+
+	offer, err := caller.CreateOffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := callee.AcceptOffer(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caller.SetAnswer(answer); err != nil {
+		t.Fatal(err)
+	}
+}

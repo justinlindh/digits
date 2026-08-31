@@ -44,14 +44,14 @@ func TestPrepareAnswer_CreatesState(t *testing.T) {
 	d.pendingOffer = offer
 	d.pendingICE = []string{"candidate:1 1 udp 2130706431 127.0.0.1 5000 typ host"}
 	d.prepareAnswer()
-	pm := d.preAnswer.peerMgr
+	pm := d.preAnswer.pm
 	answerSDP := d.preAnswer.answerSDP
 	callerField := d.preAnswer.caller
 	pendingICE := d.pendingICE
 	d.mu.Unlock()
 
 	if pm == nil {
-		t.Fatal("expected preAnswer.peerMgr to be set")
+		t.Fatal("expected preAnswer.pm to be set")
 	}
 	if answerSDP == "" {
 		t.Fatal("expected preAnswer.answerSDP to be non-empty")
@@ -59,34 +59,10 @@ func TestPrepareAnswer_CreatesState(t *testing.T) {
 	if callerField != "3140001" {
 		t.Fatalf("expected caller 3140001, got %q", callerField)
 	}
-	if pendingICE != nil {
-		t.Fatal("expected pendingICE to be cleared")
+	if len(pendingICE) != 1 {
+		t.Fatalf("pendingICE = %v, want the caller candidate kept banked for answer time", pendingICE)
 	}
 
-	_ = pm.Close()
-}
-
-func TestPrepareAnswer_BanksRemoteCandidatesWithoutApplying(t *testing.T) {
-	d := newTestDaemon()
-	offer := newCallerOffer(t)
-	cand := "candidate:1 1 udp 2130706431 127.0.0.1 5000 typ host"
-
-	d.mu.Lock()
-	d.pendingCaller = "3140001"
-	d.pendingOffer = offer
-	d.pendingICE = []string{cand}
-	d.prepareAnswer()
-	banked := append([]string(nil), d.preAnswer.remoteCandidates...)
-	pendingICE := d.pendingICE
-	pm := d.preAnswer.peerMgr
-	d.mu.Unlock()
-
-	if len(banked) != 1 || banked[0] != cand {
-		t.Fatalf("banked remote candidates = %v, want the queued caller candidate", banked)
-	}
-	if pendingICE != nil {
-		t.Fatal("expected pendingICE to be consumed into the bank")
-	}
 	_ = pm.Close()
 }
 
@@ -99,7 +75,7 @@ func TestDispatch_BanksICEWhilePrepared(t *testing.T) {
 	d.pendingCaller = "3140001"
 	d.pendingOffer = offer
 	d.prepareAnswer()
-	pm := d.preAnswer.peerMgr
+	pm := d.preAnswer.pm
 	d.mu.Unlock()
 	if pm == nil {
 		t.Fatal("setup: prepareAnswer did not create a peer")
@@ -108,10 +84,10 @@ func TestDispatch_BanksICEWhilePrepared(t *testing.T) {
 	d.handleSignal(&sigclient.Message{Type: sigclient.TypeICE, From: "3140001", Candidate: cand})
 
 	d.mu.Lock()
-	banked := append([]string(nil), d.preAnswer.remoteCandidates...)
+	banked := append([]string(nil), d.pendingICE...)
 	d.mu.Unlock()
 	if len(banked) != 1 || banked[0] != cand {
-		t.Fatalf("banked remote candidates = %v, want the dispatched candidate", banked)
+		t.Fatalf("banked candidates = %v, want the dispatched candidate", banked)
 	}
 	_ = pm.Close()
 }
@@ -123,11 +99,11 @@ func TestPrepareAnswer_NoopWithoutOffer(t *testing.T) {
 	d.pendingCaller = "3140001"
 	d.pendingOffer = ""
 	d.prepareAnswer()
-	pm := d.preAnswer.peerMgr
+	pm := d.preAnswer.pm
 	d.mu.Unlock()
 
 	if pm != nil {
-		t.Fatal("expected preAnswer.peerMgr to remain nil without offer")
+		t.Fatal("expected preAnswer.pm to remain nil without offer")
 	}
 }
 
@@ -139,9 +115,9 @@ func TestPrepareAnswer_Idempotent(t *testing.T) {
 	d.pendingCaller = "3140001"
 	d.pendingOffer = offer
 	d.prepareAnswer()
-	firstPM := d.preAnswer.peerMgr
+	firstPM := d.preAnswer.pm
 	d.prepareAnswer()
-	secondPM := d.preAnswer.peerMgr
+	secondPM := d.preAnswer.pm
 	d.mu.Unlock()
 
 	if secondPM != firstPM {
@@ -158,27 +134,32 @@ func TestCleanupPreAnswer_ClosesAndZeros(t *testing.T) {
 	d.mu.Lock()
 	d.pendingCaller = "3140001"
 	d.pendingOffer = offer
+	d.pendingICE = []string{"candidate:3 1 udp 2130706431 127.0.0.1 5004 typ host"}
 	d.prepareAnswer()
 
-	if d.preAnswer.peerMgr == nil {
+	if d.preAnswer.pm == nil {
 		d.mu.Unlock()
-		t.Fatal("setup: preAnswer.peerMgr should exist")
+		t.Fatal("setup: preAnswer.pm should exist")
 	}
 
 	d.cleanupPreAnswer()
-	pm := d.preAnswer.peerMgr
+	pm := d.preAnswer.pm
 	sdp := d.preAnswer.answerSDP
 	c := d.preAnswer.caller
+	pendingICE := d.pendingICE
 	d.mu.Unlock()
 
 	if pm != nil {
-		t.Fatal("expected preAnswer.peerMgr to be nil after cleanup")
+		t.Fatal("expected preAnswer.pm to be nil after cleanup")
 	}
 	if sdp != "" {
 		t.Fatal("expected preAnswer.answerSDP to be empty after cleanup")
 	}
 	if c != "" {
 		t.Fatal("expected preAnswer.caller to be empty after cleanup")
+	}
+	if pendingICE != nil {
+		t.Fatal("expected the dead caller's banked candidates to be dropped")
 	}
 }
 

@@ -58,7 +58,7 @@ func (m *PeerManager) SetOnConnectionState(fn func(state webrtc.PeerConnectionSt
 // decoder (to eliminate shared-buffer races when multiple peers decode concurrently
 // in a conference).
 func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
-	return newPeerManager(iceCfg, nil)
+	return newPeerManager(iceCfg, webrtc.SettingEngine{})
 }
 
 // NewPeerManagerWithTimeouts creates a PeerManager whose ICE agent uses the
@@ -68,12 +68,12 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 // its answer is sent (the ring-phase pre-answer peer) needs a deadline that
 // outlasts the longest configurable ring timeout plus connect margin.
 func NewPeerManagerWithTimeouts(iceCfg *ICEConfig, disconnected, failed, keepalive time.Duration) (*PeerManager, error) {
-	se := webrtc.SettingEngine{}
+	var se webrtc.SettingEngine
 	se.SetICETimeouts(disconnected, failed, keepalive)
-	return newPeerManager(iceCfg, &se)
+	return newPeerManager(iceCfg, se)
 }
 
-func newPeerManager(iceCfg *ICEConfig, se *webrtc.SettingEngine) (*PeerManager, error) {
+func newPeerManager(iceCfg *ICEConfig, se webrtc.SettingEngine) (*PeerManager, error) {
 	enc, err := codec.NewEncoder(48000, 1, 24000)
 	if err != nil {
 		return nil, fmt.Errorf("create opus encoder: %w", err)
@@ -91,15 +91,10 @@ func newPeerManager(iceCfg *ICEConfig, se *webrtc.SettingEngine) (*PeerManager, 
 		zeroBuf: make([]int16, 960),
 	}
 
-	// A custom SettingEngine requires its own API instance; NewAPI registers
-	// the same default codecs and env-driven logger the package-level
-	// constructor uses.
-	var pc *webrtc.PeerConnection
-	if se != nil {
-		pc, err = webrtc.NewAPI(webrtc.WithSettingEngine(*se)).NewPeerConnection(iceCfg.WebRTCConfig())
-	} else {
-		pc, err = webrtc.NewPeerConnection(iceCfg.WebRTCConfig())
-	}
+	// NewAPI fills in the same default codecs and env-driven logger that
+	// webrtc.NewPeerConnection uses; a zero SettingEngine means pion
+	// defaults, so this single path serves both constructors.
+	pc, err := webrtc.NewAPI(webrtc.WithSettingEngine(se)).NewPeerConnection(iceCfg.WebRTCConfig())
 	if err != nil {
 		return nil, fmt.Errorf("create peer connection: %w", err)
 	}

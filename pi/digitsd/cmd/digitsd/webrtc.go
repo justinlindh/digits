@@ -142,8 +142,10 @@ func (d *daemonCallbacks) AnswerCall() {
 		return
 	}
 
-	// Fast path: use pre-created PeerConnection from ring phase.
-	if d.preAnswer.peerMgr != nil {
+	// Fast path: use pre-created PeerConnection from ring phase, unless its
+	// ICE agent already died (a ring that outlasted the pre-answer deadline).
+	d.ensureLivePreAnswer()
+	if d.preAnswer.pm != nil {
 		t0 := time.Now()
 		d.mixer.StopTone()
 		pa, _ := d.takePreAnswer()
@@ -504,11 +506,14 @@ func (d *daemonCallbacks) remoteTrackHandler(pm *owebrtc.PeerManager, webrtcCh c
 }
 
 // The pre-answer peer's ICE agent enters its checking state as soon as the
-// answer SDP is prepared, long before the answer is sent, and pion's failure
-// deadline (disconnected+failed) runs from that moment. The deadline must
-// outlast the longest configurable voicemail ring timeout
-// (line.VoicemailRingTimeoutMax) plus post-answer connect margin, or the
-// agent dies mid-ring. Disconnected and keepalive stay at pion defaults.
+// answer SDP is prepared, long before the answer is sent, and pion declares
+// the agent failed disconnected+failed after checking starts: here 5+85=90s.
+// That covers the longest voicemail ring timeout (60s, enforced by the
+// server, no compile-time link from this module) plus post-answer connect
+// margin. With voicemail disabled nothing bounds a ring, so answer paths
+// additionally verify the prepared agent is still live (ensureLivePreAnswer)
+// instead of leaning on this budget. SetICETimeouts requires all three
+// values; keepalive is pion's default.
 const (
 	preAnswerICEDisconnectedTimeout = 5 * time.Second
 	preAnswerICEFailedTimeout       = 85 * time.Second
@@ -524,14 +529,19 @@ const (
 // connectivity without our answer SDP (which contains our ufrag/pwd), so no
 // media can flow until AnswerCall sends it after pickup.
 //
-// The caller's trickled candidates are banked, not applied: applying them
-// here would start connectivity checks against a caller that cannot respond
-// until it receives our answer (see the preAnswer.remoteCandidates comment).
+// The caller's trickled candidates stay banked in pendingICE, not applied:
+// applying them here would start connectivity checks against a caller that
+// cannot validate them until it holds our answer (pion asserts the STUN
+// username against the remote ufrag it does not have yet). Those checks burn
+// their per-pair retransmission budget within seconds and are never retried,
+// leaving a peer that cannot connect by the time the answer finally goes
+// out. sendPreparedAnswer applies the bank at answer time so both agents
+// start checking together, the same dynamics as a normal call setup.
 //
 // Must be called with d.mu held. On any failure, logs and returns without
 // setting preAnswer state; AnswerCall falls back to the full creation path.
 func (d *daemonCallbacks) prepareAnswer() {
-	if d.preAnswer.peerMgr != nil {
+	if d.preAnswer.pm != nil {
 		return // already prepared
 	}
 	caller := d.pendingCaller
@@ -558,8 +568,8 @@ func (d *daemonCallbacks) prepareAnswer() {
 	pm.SetOnICECandidate(func(candidate string) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		if d.preAnswer.peerMgr == pm {
-			d.preAnswer.candidates = append(d.preAnswer.candidates, candidate)
+		if d.preAnswer.pm == pm {
+			d.preAnswer.localCandidates = append(d.preAnswer.localCandidates, candidate)
 		}
 	})
 
@@ -574,28 +584,24 @@ func (d *daemonCallbacks) prepareAnswer() {
 		return
 	}
 
-	// Bank any caller candidates that arrived before we were ready; they are
-	// applied at answer time, not now.
-	remoteCandidates := d.pendingICE
-	d.pendingICE = nil
-
-	d.preAnswer.peerMgr = pm
-	d.preAnswer.answerSDP = answerSDP
-	d.preAnswer.candidates = nil // will be populated by OnICECandidate as they gather
-	d.preAnswer.remoteCandidates = remoteCandidates
-	d.preAnswer.caller = caller
+	// localCandidates fills via OnICECandidate as gathering proceeds. The
+	// caller's own candidates stay banked in d.pendingICE untouched.
+	d.preAnswer = preparedAnswer{
+		pm:        pm,
+		caller:    caller,
+		answerSDP: answerSDP,
+	}
 
 	slog.Info("prepareAnswer: ready", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
 }
 
-// preparedAnswer is the detached state of a ring-phase peer, returned by
-// takePreAnswer for promotion or teardown.
+// preparedAnswer is the ring-phase peer state: prepared by prepareAnswer,
+// detached wholesale by takePreAnswer for promotion or teardown.
 type preparedAnswer struct {
-	pm               *owebrtc.PeerManager
-	caller           string
-	answerSDP        string
-	localCandidates  []string // gathered during ring, flushed with the answer
-	remoteCandidates []string // banked from the caller, applied at answer
+	pm              *owebrtc.PeerManager
+	caller          string // pendingCaller at time of preparation
+	answerSDP       string
+	localCandidates []string // gathered during ring, flushed with the answer
 }
 
 // takePreAnswer detaches and returns the prepared ring-phase peer state,
@@ -604,42 +610,51 @@ type preparedAnswer struct {
 // attached; a caller that does not keep live playback must remove it itself.
 // Must be called with d.mu held.
 func (d *daemonCallbacks) takePreAnswer() (preparedAnswer, bool) {
-	if d.preAnswer.peerMgr == nil {
+	if d.preAnswer.pm == nil {
 		return preparedAnswer{}, false
 	}
-	pa := preparedAnswer{
-		pm:               d.preAnswer.peerMgr,
-		caller:           d.preAnswer.caller,
-		answerSDP:        d.preAnswer.answerSDP,
-		localCandidates:  d.preAnswer.candidates,
-		remoteCandidates: d.preAnswer.remoteCandidates,
-	}
-	d.preAnswer.peerMgr = nil
-	d.preAnswer.answerSDP = ""
-	d.preAnswer.candidates = nil
-	d.preAnswer.remoteCandidates = nil
-	d.preAnswer.caller = ""
+	pa := d.preAnswer
+	d.preAnswer = preparedAnswer{}
 	return pa, true
 }
 
-// sendPreparedAnswer completes the handshake for a promoted ring-phase peer.
-// It applies the banked caller candidates (starting connectivity checks now,
-// simultaneously with the caller's own checks once the answer lands), sends
-// the answer SDP, flushes the local ICE candidates banked while ringing, and
-// installs direct forwarding for any still gathering. The answer must reach
-// the caller before any local candidate does; both live pickup and voicemail
-// auto-answer rely on this ordering. Must be called with d.mu held.
-func (d *daemonCallbacks) sendPreparedAnswer(pa preparedAnswer) {
-	for _, candidate := range pa.remoteCandidates {
-		if err := pa.pm.AddICECandidate(candidate); err != nil {
-			slog.Warn("webrtc: apply banked ICE candidate failed", "caller", pa.caller, "error", err)
-		}
+// ensureLivePreAnswer discards a prepared peer whose ICE agent has already
+// reached a terminal state, so answer paths rebuild instead of promoting a
+// dead agent. The pre-answer deadline outlasts any voicemail ring, but with
+// voicemail disabled nothing bounds how long a phone can ring. Must be
+// called with d.mu held.
+func (d *daemonCallbacks) ensureLivePreAnswer() {
+	if d.preAnswer.pm == nil {
+		return
 	}
+	switch d.preAnswer.pm.ConnectionState() {
+	case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
+		slog.Warn("webrtc: prepared peer already dead, discarding", "caller", d.preAnswer.caller)
+		d.cleanupPreAnswer()
+	default:
+	}
+}
+
+// sendPreparedAnswer completes the handshake for a promoted ring-phase peer:
+// it sends the answer SDP, applies the caller candidates banked in pendingICE
+// (starting connectivity checks now, simultaneously with the caller's own
+// once the answer lands), flushes the local candidates banked while ringing,
+// and installs direct forwarding for any still gathering. The answer write
+// comes first: checks started before the caller holds our answer cannot be
+// validated and only burn their retransmission budget. Must be called with
+// d.mu held.
+func (d *daemonCallbacks) sendPreparedAnswer(pa preparedAnswer) {
 	sendSignal(d.sig, &sigclient.Message{
 		Type: sigclient.TypeAnswer,
 		To:   pa.caller,
 		SDP:  pa.answerSDP,
 	})
+	for _, candidate := range d.pendingICE {
+		if err := pa.pm.AddICECandidate(candidate); err != nil {
+			slog.Warn("webrtc: apply banked ICE candidate failed", "caller", pa.caller, "error", err)
+		}
+	}
+	d.pendingICE = nil
 	for _, candidate := range pa.localCandidates {
 		sendSignal(d.sig, &sigclient.Message{
 			Type:      sigclient.TypeICE,
@@ -658,12 +673,14 @@ func (d *daemonCallbacks) sendPreparedAnswer(pa preparedAnswer) {
 }
 
 // cleanupPreAnswer tears down any pre-created PeerConnection (e.g. caller
-// hung up during ring). Must be called with d.mu held.
+// hung up during ring), dropping that caller's banked candidates with it.
+// Must be called with d.mu held.
 func (d *daemonCallbacks) cleanupPreAnswer() {
 	pa, ok := d.takePreAnswer()
 	if !ok {
 		return
 	}
+	d.pendingICE = nil
 	pm, caller := pa.pm, pa.caller
 	slog.Info("cleanupPreAnswer: tearing down pre-created peer", "caller", caller)
 	if caller != "" {

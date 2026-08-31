@@ -38,7 +38,7 @@ func TestVoicemailAutoAnswer_PromotesPreparedPeer(t *testing.T) {
 	d.pendingCaller = "3140001"
 	d.pendingOffer = offer
 	d.prepareAnswer()
-	prepared := d.preAnswer.peerMgr
+	prepared := d.preAnswer.pm
 	d.mu.Unlock()
 	if prepared == nil {
 		t.Fatal("setup: prepareAnswer did not create a peer")
@@ -50,7 +50,7 @@ func TestVoicemailAutoAnswer_PromotesPreparedPeer(t *testing.T) {
 
 	d.mu.Lock()
 	promoted := d.peerMgr
-	preAnswerPM := d.preAnswer.peerMgr
+	preAnswerPM := d.preAnswer.pm
 	answerSDP := d.preAnswer.answerSDP
 	callPeer := d.callPeer
 	vmCh := d.voicemailWebRTCCh
@@ -95,6 +95,61 @@ func TestVoicemailAutoAnswer_PreparesWhenNotPrepared(t *testing.T) {
 	d.mu.Unlock()
 	if pm == nil {
 		t.Fatal("expected a PeerManager to be prepared and promoted")
+	}
+	_ = pm.Close()
+}
+
+func TestVoicemailAutoAnswer_RebuildsWhenPreparedPeerDead(t *testing.T) {
+	d := newVoicemailTestDaemon(t)
+	offer := newCallerOffer(t)
+
+	d.mu.Lock()
+	d.pendingCaller = "3140001"
+	d.pendingOffer = offer
+	d.prepareAnswer()
+	prepared := d.preAnswer.pm
+	d.mu.Unlock()
+	if prepared == nil {
+		t.Fatal("setup: prepareAnswer did not create a peer")
+	}
+	// Simulate an agent that died during a ring longer than its deadline.
+	_ = prepared.Close()
+
+	if !d.VoicemailAutoAnswer() {
+		t.Fatal("expected auto-answer to rebuild and succeed")
+	}
+
+	d.mu.Lock()
+	pm := d.peerMgr
+	d.mu.Unlock()
+	if pm == nil || pm == prepared {
+		t.Fatal("expected a fresh peer, not the dead prepared one")
+	}
+	_ = pm.Close()
+}
+
+func TestAnswerCall_RebuildsWhenPreparedPeerDead(t *testing.T) {
+	d := newVoicemailTestDaemon(t)
+	offer := newCallerOffer(t)
+
+	d.mu.Lock()
+	d.pendingCaller = "3140001"
+	d.pendingOffer = offer
+	d.prepareAnswer()
+	prepared := d.preAnswer.pm
+	d.mu.Unlock()
+	if prepared == nil {
+		t.Fatal("setup: prepareAnswer did not create a peer")
+	}
+	_ = prepared.Close()
+
+	d.AnswerCall()
+
+	d.mu.Lock()
+	pm := d.peerMgr
+	d.mu.Unlock()
+	if pm == nil || pm == prepared {
+		t.Fatal("expected a fresh peer, not the dead prepared one")
 	}
 	_ = pm.Close()
 }

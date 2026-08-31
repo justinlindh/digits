@@ -124,20 +124,7 @@ type daemonCallbacks struct {
 	// preAnswer holds a PeerConnection created during the ring phase to
 	// reduce call-answer latency. Promoted into the active call state on
 	// HOOK:OFF; torn down if the caller hangs up before we answer.
-	preAnswer struct {
-		peerMgr    *owebrtc.PeerManager
-		answerSDP  string
-		candidates []string // local ICE candidates gathered during ring, sent on answer
-		// remoteCandidates banks the caller's trickled candidates, applied to
-		// the peer only at answer time. Applying them during the ring would
-		// start connectivity checks against a caller that cannot respond
-		// until it has our answer: the checks exhaust and stop, the NAT
-		// mappings they punched go cold, and by answer time neither side can
-		// reach the other. Deferring application makes both agents start
-		// checking together at answer, the same dynamics as a live call.
-		remoteCandidates []string
-		caller           string // pendingCaller at time of preparation
-	}
+	preAnswer            preparedAnswer
 	iceServers           []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode            bool                      // read from DIGITS_DEBUG env at startup
 	paired               atomic.Bool
