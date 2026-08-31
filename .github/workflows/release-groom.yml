@@ -74,16 +74,46 @@ jobs:
           prefix=$(echo "$TAG" | cut -d/ -f1)
           prev=$(git tag --list "${prefix}/v*" | sort -V | grep -B1 "^${TAG}$" | head -n1 || true)
           if [ -n "$prev" ] && [ "$prev" != "$TAG" ]; then
-            git log --format='%s' "${prev}..${TAG}" > /tmp/commits.txt || true
+            git log --format='%H%x09%an%x09%s' "${prev}..${TAG}" > /tmp/raw-commits.tsv || true
           else
-            git log --format='%s' "${TAG}" -n 50 > /tmp/commits.txt
+            git log --format='%H%x09%an%x09%s' "${TAG}" -n 50 > /tmp/raw-commits.tsv
           fi
+          # Tag commits from outside contributors so the groomer can credit
+          # them. Bots and the repo owner get no tag and read as Justin.
+          # Author lookup goes through the API because the squash-merge git
+          # identity is whatever GitHub put there (often just the login).
+          : > /tmp/commits.txt
+          while IFS=$'\t' read -r sha name subject; do
+            credit=""
+            author=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}" \
+              --jq '.author // empty | select(.type != "Bot") | .login' 2>/dev/null || true)
+            if [ -n "$author" ]; then
+              if [ "$author" != "$OWNER" ]; then
+                display=$(gh api "users/${author}" --jq '.name // empty' 2>/dev/null || true)
+                if [ -z "$display" ]; then
+                  # No profile name; use the git author name from the PR's own commits.
+                  pr=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+                  if [ -n "$pr" ]; then
+                    display=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}/commits" 2>/dev/null \
+                      | jq -r --arg login "$author" '[.[] | select(.author.login == $login) | .commit.author.name] | map(select(. != "" and . != $login)) | first // empty' 2>/dev/null || true)
+                  fi
+                fi
+                credit=" [contributed by ${display:-$author}]"
+              fi
+            elif [[ "$name" != *"[bot]" ]]; then
+              credit=" [contributed by ${name}]"
+            fi
+            printf '%s%s\n' "$subject" "$credit" >> /tmp/commits.txt
+          done < /tmp/raw-commits.tsv
           wc -l /tmp/commits.txt
           {
             echo 'COMMITS<<GROOM_EOF_COMMITS'
             cat /tmp/commits.txt
             echo 'GROOM_EOF_COMMITS'
           } >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
 
       - name: Groom notes with Claude
         if: steps.body.outputs.already_groomed != 'true'
