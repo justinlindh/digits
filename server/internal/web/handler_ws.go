@@ -242,11 +242,11 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		// so the next register-without-token is treated as a fresh pair-up
 		// rather than rejected as "device_token required".
 		if msg.Type == signaling.TypeRepair {
-			if h.deviceStore != nil && msg.HardwareID != "" {
-				if err := h.deviceStore.Unpair(ctx, msg.HardwareID); err != nil {
-					slog.WarnContext(ctx, "repair: unpair failed", "hardware_id", msg.HardwareID, "err", err)
+			if h.deviceStore != nil {
+				if err := h.deviceStore.Unpair(ctx, conn.HardwareID); err != nil {
+					slog.WarnContext(ctx, "repair: unpair failed", "hardware_id", conn.HardwareID, "err", err)
 				} else {
-					slog.InfoContext(ctx, "repair: device unpaired by client request", "hardware_id", msg.HardwareID, "number", number)
+					slog.InfoContext(ctx, "repair: device unpaired by client request", "hardware_id", conn.HardwareID, "number", number)
 				}
 			}
 			continue
