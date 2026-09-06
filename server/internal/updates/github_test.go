@@ -21,8 +21,8 @@ func newTestGitHubReleases(owner, repo string) *GitHubReleases {
 }
 
 func TestGitHubReleases_BuildsIndex(t *testing.T) {
-	sha256fw := "abc123deadbeef"
-	sha256pi := "def456cafebabe"
+	sha256fw := strings.Repeat("a", 64)
+	sha256pi := strings.Repeat("b", 64)
 
 	releases := []ghRelease{
 		{
@@ -105,19 +105,117 @@ func TestGitHubReleases_BuildsIndex(t *testing.T) {
 		t.Errorf("firmware sha256 = %q, want %q", fwRel.SHA256, sha256fw)
 	}
 
-	// Pi: latest=1.1.0, 2 releases
+	// Pi: releases without checksum sidecars are not installable and are omitted.
 	if idx.Pi.Latest != "1.1.0" {
 		t.Errorf("pi latest = %q, want %q", idx.Pi.Latest, "1.1.0")
 	}
-	if len(idx.Pi.Releases) != 2 {
-		t.Errorf("pi releases count = %d, want 2", len(idx.Pi.Releases))
+	if len(idx.Pi.Releases) != 1 {
+		t.Errorf("pi releases count = %d, want 1", len(idx.Pi.Releases))
 	}
-	piOld := idx.Pi.Releases["1.0.0"]
-	if piOld == nil {
-		t.Fatal("pi 1.0.0 release is nil")
+	if _, ok := idx.Pi.Releases["1.0.0"]; ok {
+		t.Error("pi 1.0.0 without checksum was advertised")
 	}
-	if piOld.SHA256 != "" {
-		t.Errorf("pi 1.0.0 sha256 = %q, want empty", piOld.SHA256)
+	if _, ok := idx.Server.Releases["1.0.0"]; !ok {
+		t.Error("server container release without checksum was omitted")
+	}
+}
+
+func TestGitHubReleases_ChecksumHTTPFailureOmitsBinaryRelease(t *testing.T) {
+	var baseURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/test-owner/test-repo/releases":
+			_ = json.NewEncoder(w).Encode([]ghRelease{{
+				TagName: "pi/v1.2.0",
+				Assets: []ghAsset{
+					{Name: "digitsd-1.2.0-aarch64", BrowserDownloadURL: baseURL + "/digitsd"},
+					{Name: "digitsd-1.2.0-aarch64.sha256", BrowserDownloadURL: baseURL + "/digitsd.sha256"},
+				},
+			}})
+		case "/digitsd.sha256":
+			http.Error(w, "temporary failure", http.StatusServiceUnavailable)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	gh := newTestGitHubReleases("test-owner", "test-repo")
+	gh.apiBase = srv.URL
+	gh.client = srv.Client()
+	gh.refresh(context.Background())
+	if idx := gh.ReleaseIndex(); idx != nil {
+		t.Fatalf("release index created from incomplete metadata: %+v", idx.Pi)
+	}
+}
+
+func TestGitHubReleases_ChecksumHTTPFailurePreservesCachedIndex(t *testing.T) {
+	var baseURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/test-owner/test-repo/releases":
+			_ = json.NewEncoder(w).Encode([]ghRelease{{
+				TagName: "pi/v1.2.0",
+				Assets: []ghAsset{
+					{Name: "digitsd-1.2.0-aarch64", BrowserDownloadURL: baseURL + "/digitsd"},
+					{Name: "digitsd-1.2.0-aarch64.sha256", BrowserDownloadURL: baseURL + "/digitsd.sha256"},
+				},
+			}})
+		case "/digitsd.sha256":
+			http.Error(w, "temporary failure", http.StatusServiceUnavailable)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	cached := &ReleaseIndex{Pi: ComponentIndex{Latest: "1.1.0", Releases: map[string]*Release{
+		"1.1.0": {Version: "1.1.0", SHA256: strings.Repeat("a", 64)},
+	}}}
+	gh := NewGitHubReleasesWithIndex(cached)
+	gh.owner = "test-owner"
+	gh.repo = "test-repo"
+	gh.apiBase = srv.URL
+	gh.client = srv.Client()
+	gh.refresh(context.Background())
+
+	if idx := gh.ReleaseIndex(); idx != cached {
+		t.Fatalf("transient checksum failure replaced cached index: %+v", idx)
+	}
+}
+
+func TestGitHubReleases_InvalidChecksumOmitsBinaryRelease(t *testing.T) {
+	var baseURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/test-owner/test-repo/releases":
+			_ = json.NewEncoder(w).Encode([]ghRelease{{
+				TagName: "fw/v1.2.0",
+				Assets: []ghAsset{
+					{Name: "firmware.elf", BrowserDownloadURL: baseURL + "/firmware.elf"},
+					{Name: "firmware.elf.sha256", BrowserDownloadURL: baseURL + "/firmware.elf.sha256"},
+				},
+			}})
+		case "/firmware.elf.sha256":
+			_, _ = w.Write([]byte("not-a-sha256"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	gh := newTestGitHubReleases("test-owner", "test-repo")
+	gh.apiBase = srv.URL
+	gh.client = srv.Client()
+	idx, err := gh.fetch(context.Background())
+	if err != nil {
+		t.Fatalf("fetch() error: %v", err)
+	}
+	if idx.Firmware.Latest != "" || len(idx.Firmware.Releases) != 0 {
+		t.Fatalf("release with invalid checksum advertised: %+v", idx.Firmware)
 	}
 }
 
@@ -232,17 +330,21 @@ func TestFetchPopulatesNotes(t *testing.T) {
 			"published_at": "2026-04-20T12:00:00Z",
 			"body": "<!-- groomed:v1 -->\nThe 4-key, vanquished.",
 			"assets": [
-				{"name": "firmware-1.4.0.elf", "browser_download_url": "https://example.invalid/fw-1.4.0.elf"}
+				{"name": "firmware-1.4.0.elf", "browser_download_url": "BINARY_URL"},
+				{"name": "firmware-1.4.0.elf.sha256", "browser_download_url": "SHA256_URL"}
 			]
 		}
 	]`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, ".sha256") {
-			w.WriteHeader(http.StatusNotFound)
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/firmware.sha256" {
+			_, _ = w.Write([]byte(strings.Repeat("c", 64)))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(respBody))
+		body := strings.ReplaceAll(respBody, "BINARY_URL", srv.URL+"/firmware.elf")
+		body = strings.ReplaceAll(body, "SHA256_URL", srv.URL+"/firmware.sha256")
+		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
 

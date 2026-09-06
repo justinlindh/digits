@@ -209,6 +209,9 @@ func resolveTargetRelease(label, target, current string, comp ComponentIndex) (*
 	if !ok {
 		return nil, fmt.Errorf("%s version %s not found in release index", label, target)
 	}
+	if _, err := normalizeSHA256(rel.SHA256); err != nil {
+		return nil, fmt.Errorf("%s version %s has invalid sha256: %w", label, target, err)
+	}
 	return rel, nil
 }
 
@@ -224,9 +227,23 @@ func versionIsNewer(candidate, current string) bool {
 	return candidate != current
 }
 
+func normalizeSHA256(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	decoded, err := hex.DecodeString(value)
+	if err != nil || len(decoded) != sha256.Size {
+		return "", fmt.Errorf("must be %d hexadecimal characters", sha256.Size*2)
+	}
+	return value, nil
+}
+
 // Download downloads an artifact from a URL, verifies SHA256, and writes it
 // atomically to the staging directory.
 func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
+	var err error
+	expectedSHA, err = normalizeSHA256(expectedSHA)
+	if err != nil {
+		return "", fmt.Errorf("invalid expected sha256: %w", err)
+	}
 	if err := os.MkdirAll(u.cfg.StagingDir, 0755); err != nil {
 		return "", fmt.Errorf("create staging dir: %w", err)
 	}
@@ -286,7 +303,9 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 		offset = 0
 		h = sha256.New()
 	default:
-		if offset > 0 {
+		transient := resp.StatusCode == http.StatusTooManyRequests ||
+			(resp.StatusCode >= 500 && resp.StatusCode <= 599)
+		if offset > 0 && !transient {
 			// Most likely 416 from a partial the server can no longer satisfy
 			// (e.g. a complete-but-unrenamed leftover). Drop it so the next
 			// attempt starts clean instead of erroring forever.
