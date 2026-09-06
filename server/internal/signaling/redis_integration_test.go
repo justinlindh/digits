@@ -80,6 +80,65 @@ func TestRedisBridgeEndToEnd(t *testing.T) {
 	}
 }
 
+func TestRedisBridgeHardwareDeliveryEndToEnd(t *testing.T) {
+	redisURL := os.Getenv("TEST_REDIS_URL")
+	if redisURL == "" {
+		t.Skip("TEST_REDIS_URL not set, skipping Redis integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	bridgeA, err := NewRedisBridge(redisURL)
+	if err != nil {
+		t.Fatalf("bridgeA: %v", err)
+	}
+	defer func() { _ = bridgeA.Close() }()
+	bridgeA.podID = "pod-a-hardware"
+
+	hubA := NewHub()
+	hubA.SetRedis(bridgeA)
+	go hubA.Run(ctx)
+
+	bridgeB, err := NewRedisBridge(redisURL)
+	if err != nil {
+		t.Fatalf("bridgeB: %v", err)
+	}
+	defer func() { _ = bridgeB.Close() }()
+	bridgeB.podID = "pod-b-hardware"
+
+	hubB := NewHub()
+	hubB.SetRedis(bridgeB)
+	go hubB.Run(ctx)
+
+	time.Sleep(200 * time.Millisecond)
+
+	conn := &Conn{
+		HardwareID: "hw-cross-pod",
+		Send:       make(chan []byte, 10),
+	}
+	if err := hubB.Register("3140001", conn); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := hubA.SendToHardware("hw-cross-pod", &Message{Type: TypeRingTest}); err != nil {
+		t.Fatalf("hubA.SendToHardware: %v", err)
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeRingTest {
+			t.Errorf("Type = %q, want %q", msg.Type, TypeRingTest)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for cross-pod hardware delivery")
+	}
+}
+
 // TestRedisBridgeSelfMessagesSkipped verifies that a hub does not deliver
 // its own published messages back to itself.
 func TestRedisBridgeSelfMessagesSkipped(t *testing.T) {

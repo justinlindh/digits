@@ -201,15 +201,12 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		h.mu.RUnlock()
 
 	case "hardware":
-		h.mu.RLock()
-		conn := h.hwConns[env.Target]
-		h.mu.RUnlock()
-		if conn == nil {
-			return
-		}
-		select {
-		case conn.Send <- data:
+		err := h.enqueueHardware(env.Target, data)
+		switch {
+		case err == nil:
 			slog.Debug("redis: delivered to local hardware connection", "pod", env.PodID, "delivered", true)
+		case errors.Is(err, ErrNotConnected):
+			return
 		default:
 			slog.Debug("redis: local hw send buffer full", "pod", env.PodID)
 		}
@@ -673,12 +670,12 @@ func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Durati
 }
 
 func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
-	h.mu.RLock()
-	conn := h.hwConns[hardwareID]
-	bridge := h.redis
-	h.mu.RUnlock()
+	data, err := msg.Marshal()
+	if err != nil {
+		return err
+	}
 
-	err := sendToConn(conn, msg, "hardware", hardwareID)
+	err = h.enqueueHardware(hardwareID, data)
 	if err == nil {
 		return nil
 	}
@@ -687,6 +684,9 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 		return err
 	}
 
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
 	return h.publishFallback(bridge, "hardware", hardwareID, "hardware", msg)
 }
 
@@ -718,23 +718,23 @@ func (h *Hub) Broadcast(msg *Message) {
 	}
 }
 
-// sendToConn marshals msg and pushes it onto conn.Send without blocking.
-// label/id are only used to label the resulting error: "<label> <id>: <reason>".
-// Returns ErrNotConnected when conn is nil so callers can errors.Is past
-// expected offline cases.
-func sendToConn(conn *Conn, msg *Message, label, id string) error {
+// enqueueHardware pushes data onto the current hardware connection without
+// blocking. The read lock protects the channel for the full lookup and enqueue
+// operation because Register and Unregister close replaced or removed channels
+// while holding the write lock.
+func (h *Hub) enqueueHardware(hardwareID string, data []byte) error {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	conn := h.hwConns[hardwareID]
 	if conn == nil {
-		return fmt.Errorf("%s %s: %w", label, id, ErrNotConnected)
-	}
-	data, err := msg.Marshal()
-	if err != nil {
-		return err
+		return fmt.Errorf("hardware %s: %w", hardwareID, ErrNotConnected)
 	}
 	select {
 	case conn.Send <- data:
 		return nil
 	default:
-		return fmt.Errorf("%s %s: send buffer full", label, id)
+		return fmt.Errorf("hardware %s: send buffer full", hardwareID)
 	}
 }
 
