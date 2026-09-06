@@ -259,14 +259,12 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	// digest covers the whole file.
 	var offset int64
 	h := sha256.New()
-	if expectedSHA != "" {
-		if marker, err := os.ReadFile(markerPath); err == nil && string(marker) == expectedSHA {
-			if prev, err := os.Open(tmpPath); err == nil {
-				n, cerr := io.Copy(h, prev)
-				_ = prev.Close()
-				if cerr == nil {
-					offset = n
-				}
+	if marker, err := os.ReadFile(markerPath); err == nil && string(marker) == expectedSHA {
+		if prev, err := os.Open(tmpPath); err == nil {
+			n, cerr := io.Copy(h, prev)
+			_ = prev.Close()
+			if cerr == nil {
+				offset = n
 			}
 		}
 	}
@@ -323,7 +321,7 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create temp: %w", err)
 	}
-	if expectedSHA != "" && offset == 0 {
+	if offset == 0 {
 		if err := os.WriteFile(markerPath, []byte(expectedSHA), 0644); err != nil {
 			_ = f.Close()
 			return "", fmt.Errorf("write resume marker: %w", err)
@@ -340,7 +338,7 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	}
 
 	gotSHA := hex.EncodeToString(h.Sum(nil))
-	if expectedSHA != "" && gotSHA != expectedSHA {
+	if gotSHA != expectedSHA {
 		_ = os.Remove(tmpPath)
 		_ = os.Remove(markerPath)
 		return "", fmt.Errorf("sha256 mismatch: got %s, want %s", gotSHA, expectedSHA)
