@@ -275,7 +275,9 @@ func validSHA256(value string) bool {
 func transientChecksumError(err error) bool {
 	var httpErr *httpError
 	if errors.As(err, &httpErr) {
-		return httpErr.StatusCode == http.StatusRequestTimeout ||
+		return httpErr.StatusCode == http.StatusUnauthorized ||
+			httpErr.StatusCode == http.StatusForbidden ||
+			httpErr.StatusCode == http.StatusRequestTimeout ||
 			httpErr.StatusCode == http.StatusTooEarly ||
 			httpErr.StatusCode == http.StatusTooManyRequests ||
 			(httpErr.StatusCode >= 500 && httpErr.StatusCode <= 599)

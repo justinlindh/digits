@@ -186,6 +186,14 @@ func TestGitHubReleases_ChecksumHTTPFailurePreservesCachedIndex(t *testing.T) {
 	}
 }
 
+func TestTransientChecksumError_GitHubAuthFailures(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		if !transientChecksumError(&httpError{StatusCode: status}) {
+			t.Errorf("status %d should preserve the cached release index", status)
+		}
+	}
+}
+
 func TestGitHubReleases_InvalidChecksumOmitsBinaryRelease(t *testing.T) {
 	var baseURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
