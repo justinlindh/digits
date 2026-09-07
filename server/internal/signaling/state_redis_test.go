@@ -223,6 +223,7 @@ func TestDeviceStateUpdateDeviceInfo(t *testing.T) {
 
 	ds.UpdateDeviceInfo(ctx, "hw-abc", "conn-abc", DevicePresence{
 		PiVersion:  "1.1.0",
+		DevMode:    true,
 		RemoteAddr: "192.168.1.50",
 	})
 
@@ -231,6 +232,13 @@ func TestDeviceStateUpdateDeviceInfo(t *testing.T) {
 		t.Fatal("expected a DeviceInfoSnapshot")
 	}
 	info := all[0]
+	if !info.DevMode {
+		t.Error("dev mode lost after device-info update")
+	}
+	ds.UpdateDeviceInfo(ctx, "hw-abc", "conn-abc", DevicePresence{DevMode: false})
+	if updated := ds.AllDeviceInfo(ctx, "hw-5551234"); len(updated) != 1 || updated[0].DevMode {
+		t.Error("dev mode not cleared after device-info update")
+	}
 	if info.PiVersion != "1.1.0" {
 		t.Errorf("PiVersion = %q, want %q", info.PiVersion, "1.1.0")
 	}

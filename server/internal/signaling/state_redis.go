@@ -309,7 +309,7 @@ func (s *DeviceState) UpdateDeviceInfo(ctx context.Context, hardwareID, connecti
 	appendField("fw_version", p.FirmwareVersion)
 	appendField("fw_commit", p.FirmwareCommit)
 	appendField("remote_addr", p.RemoteAddr)
-	args = append(args, "dev_mode", strconv.FormatBool(p.DevMode))
+	args = append(args, "dev_mode", p.DevMode)
 
 	if err := updateDeviceInfoScript.Run(ctx, s.client, []string{deviceKeyPrefix + hardwareID}, args...).Err(); err != nil {
 		slog.ErrorContext(ctx, "redis: UpdateDeviceInfo failed", "hardware_id", hardwareID, "err", err)
