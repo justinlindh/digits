@@ -248,6 +248,107 @@ func TestDeliverFromRedisToLocalConnection(t *testing.T) {
 	}
 }
 
+// CloseLine publishes a "close" envelope so pods holding the line's other
+// sockets close them too. Local delivery happens regardless of the bridge.
+func TestCloseLinePublishesToRedis(t *testing.T) {
+	hub := NewHub()
+	fake := newFakeRedis()
+	hub.SetRedis(fake)
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", conn)
+
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	envs := fake.publishedEnvelopes()
+	if len(envs) != 1 {
+		t.Fatalf("published %d envelopes, want 1", len(envs))
+	}
+	if envs[0].TargetType != "close" || envs[0].Target != "3140001" {
+		t.Errorf("envelope = %s/%s, want close/3140001", envs[0].TargetType, envs[0].Target)
+	}
+	if envs[0].Message == nil || envs[0].Message.Type != TypeLineRenumber || envs[0].Message.Number != "3140009" {
+		t.Errorf("envelope must carry the farewell message, got %+v", envs[0].Message)
+	}
+	assertFarewellThenSentinel(t, conn, "3140009")
+}
+
+// A "close" envelope from another pod closes this pod's connections for the
+// line the same way a local CloseLine does: farewell, then sentinel.
+func TestDeliverFromRedisClosesLocalLine(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", conn)
+
+	hub.deliverFromRedis(&Envelope{
+		PodID:      "other-pod",
+		TargetType: "close",
+		Target:     "3140001",
+		Message:    &Message{Type: TypeLineRenumber, Number: "3140009"},
+	})
+
+	assertFarewellThenSentinel(t, conn, "3140009")
+}
+
+// CloseHardware publishes a "close_hardware" envelope whether or not the
+// device is connected here: the local entry can be a dying socket while the
+// live one is on another pod.
+func TestCloseHardwarePublishesEvenWhenLocal(t *testing.T) {
+	hub := NewHub()
+	fake := newFakeRedis()
+	hub.SetRedis(fake)
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", conn)
+
+	hub.CloseHardware("hw-a", &Message{Type: TypeLineRenumber, Number: "3140009"})
+	assertFarewellThenSentinel(t, conn, "3140009")
+	envs := fake.publishedEnvelopes()
+	if len(envs) != 1 {
+		t.Fatalf("published %d envelopes, want 1", len(envs))
+	}
+	if envs[0].TargetType != "close_hardware" || envs[0].Target != "hw-a" {
+		t.Errorf("envelope = %s/%s, want close_hardware/hw-a", envs[0].TargetType, envs[0].Target)
+	}
+	if envs[0].Message == nil || envs[0].Message.Number != "3140009" {
+		t.Errorf("envelope must carry the farewell message, got %+v", envs[0].Message)
+	}
+
+	hub.CloseHardware("hw-elsewhere", nil)
+	envs = fake.publishedEnvelopes()
+	if len(envs) != 2 || envs[1].Target != "hw-elsewhere" || envs[1].Message != nil {
+		t.Fatalf("bare close for a remote device should publish a nil-message envelope, got %+v", envs)
+	}
+}
+
+// A "close_hardware" envelope from another pod closes this pod's connection
+// for that device only. A "close" envelope with no Message still closes; a
+// nil Message on any other type is ignored rather than queued as a sentinel.
+func TestDeliverFromRedisClosesLocalHardware(t *testing.T) {
+	hub := NewHub()
+	moved := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	sibling := &Conn{HardwareID: "hw-b", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", moved)
+	_ = hub.Register("3140001", sibling)
+
+	hub.deliverFromRedis(&Envelope{
+		PodID:      "other-pod",
+		TargetType: "close_hardware",
+		Target:     "hw-a",
+		Message:    &Message{Type: TypeLineRenumber, Number: "3140009"},
+	})
+	assertFarewellThenSentinel(t, moved, "3140009")
+	if len(drainSend(sibling)) != 0 {
+		t.Fatal("sibling must be untouched by close_hardware")
+	}
+
+	hub.deliverFromRedis(&Envelope{PodID: "other-pod", TargetType: "number", Target: "3140001"})
+	if len(drainSend(sibling)) != 0 {
+		t.Fatal("nil Message on a number envelope must not queue anything")
+	}
+
+	hub.deliverFromRedis(&Envelope{PodID: "other-pod", TargetType: "close", Target: "3140001"})
+	assertSentinelOnly(t, sibling)
+}
+
 func TestDeliverFromRedisSkipsMissingTarget(t *testing.T) {
 	hub := NewHub()
 	// No connection for "3140099"; should not panic.

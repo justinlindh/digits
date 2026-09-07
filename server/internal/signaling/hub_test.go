@@ -2,6 +2,7 @@ package signaling
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -372,18 +373,212 @@ func TestUnregisterClearsVoicemailUnheardForHandset(t *testing.T) {
 	}
 }
 
-func TestRekeyNumberMovesVoicemailUnheard(t *testing.T) {
-	hub := NewHub()
-	hub.SetVoicemailUnheard("3140001", "hw-a", 3)
-	hub.SetVoicemailUnheard("3140001", "hw-b", 4)
-
-	hub.RekeyNumber("3140001", "3140002")
-
-	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
-		t.Errorf("old number should have 0 after rekey, got %d", got)
+// drainSend reads everything buffered on conn.Send (the channel may already
+// be closed) and returns the raw frames in order.
+func drainSend(conn *Conn) [][]byte {
+	var out [][]byte
+	for {
+		select {
+		case data, ok := <-conn.Send:
+			if !ok {
+				return out
+			}
+			out = append(out, data)
+		default:
+			return out
+		}
 	}
-	if got := hub.LineVoicemailUnheard("3140002"); got != 7 {
-		t.Errorf("new number should have summed counts, got %d, want 7", got)
+}
+
+// assertFarewellThenSentinel checks that conn was handed exactly a
+// line_renumber farewell carrying wantNumber followed by the nil close
+// sentinel, which is what CloseLine queues on every connection it closes.
+func assertFarewellThenSentinel(t *testing.T, conn *Conn, wantNumber string) {
+	t.Helper()
+	frames := drainSend(conn)
+	if len(frames) != 2 {
+		t.Fatalf("%s: got %d frames, want farewell + sentinel", conn.HardwareID, len(frames))
+	}
+	msg, err := ParseMessage(frames[0])
+	if err != nil {
+		t.Fatalf("%s: parse farewell: %v", conn.HardwareID, err)
+	}
+	if msg.Type != TypeLineRenumber || msg.Number != wantNumber {
+		t.Errorf("%s: farewell = %s{%s}, want %s{%s}", conn.HardwareID, msg.Type, msg.Number, TypeLineRenumber, wantNumber)
+	}
+	if frames[1] != nil {
+		t.Errorf("%s: second frame should be the nil close sentinel", conn.HardwareID)
+	}
+}
+
+// CloseLine queues the farewell and then the close sentinel on every
+// connection under the number, in that order, and leaves other lines alone.
+// Unregistering is the drainer's job, so the conns stay registered here.
+func TestCloseLineQueuesFarewellThenSentinel(t *testing.T) {
+	hub := NewHub()
+	a := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	b := &Conn{HardwareID: "hw-b", Send: make(chan []byte, 8)}
+	other := &Conn{HardwareID: "hw-c", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", a)
+	_ = hub.Register("3140001", b)
+	_ = hub.Register("3140002", other)
+
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	assertFarewellThenSentinel(t, a, "3140009")
+	assertFarewellThenSentinel(t, b, "3140009")
+	if hub.ConnectionCount("3140002") != 1 || len(drainSend(other)) != 0 {
+		t.Error("other line must be untouched")
+	}
+}
+
+// assertSentinelOnly checks that conn was handed only the nil close
+// sentinel, which is what a close without a farewell queues.
+func assertSentinelOnly(t *testing.T, conn *Conn) {
+	t.Helper()
+	frames := drainSend(conn)
+	if len(frames) != 1 || frames[0] != nil {
+		t.Fatalf("%s: got %d frames, want only the nil close sentinel", conn.HardwareID, len(frames))
+	}
+}
+
+// A nil farewell closes without saying anything first: the device reconnects
+// and register tells it what it is now (line deleted means pairing_code).
+func TestCloseLineNilFarewellQueuesSentinelOnly(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", conn)
+
+	hub.CloseLine("3140001", nil)
+
+	assertSentinelOnly(t, conn)
+}
+
+// A full send buffer must not block CloseLine or disturb what is already
+// queued; the sentinel is simply absent (the socket, when there is one, is
+// closed outright instead) and the dropped farewell is counted as a drop.
+func TestCloseLineFullBufferDoesNotBlock(t *testing.T) {
+	hub := NewHub()
+	drops := 0
+	hub.SetDropHook(func() { drops++ })
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140001", conn)
+	conn.Send <- []byte("queued")
+
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	frames := drainSend(conn)
+	if len(frames) != 1 || string(frames[0]) != "queued" {
+		t.Errorf("full buffer should hold only the pre-existing frame, got %d frames", len(frames))
+	}
+	if drops != 1 {
+		t.Errorf("dropped farewell should count as a drop, got %d", drops)
+	}
+
+	// Once the pump has made room, the sentinel still arrives.
+	select {
+	case data, ok := <-conn.Send:
+		if !ok || data != nil {
+			t.Fatalf("expected the nil close sentinel after draining, got ok=%v data=%q", ok, data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("close sentinel never queued after the buffer drained")
+	}
+}
+
+// A retry that outlives its connection must stop instead of sending on the
+// channel Unregister closed; the failure mode is a panic on that channel
+// while the retry is still ticking.
+func TestRetryCloseStopsAfterUnregister(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140001", conn)
+	conn.Send <- []byte("queued")
+
+	hub.CloseLine("3140001", nil)
+	hub.Unregister("3140001", conn)
+	if frames := drainSend(conn); len(frames) != 1 {
+		t.Fatalf("expected only the queued frame before the close, got %d", len(frames))
+	}
+
+	time.Sleep(10 * sendRetryInterval)
+}
+
+// A phone told its line changed comes back under the new number while its
+// old-number socket may still be unwinding. Register must evict that stale
+// connection so it stops answering as the old number, and the stale read
+// loop's late Unregister must not tear down the live registration.
+func TestRegisterSameHardwareUnderNewNumberEvictsOld(t *testing.T) {
+	hub := NewHub()
+	ds, _ := newTestDeviceState(t)
+	hub.SetDeviceState(ds)
+	ctx := context.Background()
+
+	oldConn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140001", oldConn)
+	hub.SetVoicemailUnheard("3140001", "hw-a", 2)
+
+	newConn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140002", newConn)
+
+	if hub.Get("3140001") != nil {
+		t.Fatal("stale old-number connection still registered")
+	}
+	if _, ok := <-oldConn.Send; ok {
+		t.Fatal("evicted connection's Send channel should be closed")
+	}
+	if hub.LineVoicemailUnheard("3140001") != 0 {
+		t.Error("evicted connection's voicemail count survived")
+	}
+	if ds.IsOnline(ctx, "3140001") {
+		t.Error("old number still online in presence after eviction")
+	}
+	if !ds.HardwareOnlineOnLine(ctx, "3140002", "hw-a") {
+		t.Fatal("presence should show the hardware on the new number")
+	}
+
+	// The old read loop unwinds after the new registration.
+	hub.Unregister("3140001", oldConn)
+
+	if hub.Get("3140002") != newConn {
+		t.Fatal("live connection lost after stale Unregister")
+	}
+	if !hub.IsHardwareOnline("hw-a") || !ds.HardwareOnlineOnLine(ctx, "3140002", "hw-a") {
+		t.Fatal("stale Unregister tore down the live hardware presence")
+	}
+	select {
+	case _, ok := <-newConn.Send:
+		if !ok {
+			t.Fatal("live connection's Send channel was closed by the stale Unregister")
+		}
+	default:
+	}
+}
+
+// CloseHardware closes exactly the named device's connection and leaves the
+// other phones on the same line alone, which is what moving one handset to
+// another line needs.
+func TestCloseHardwareClosesOnlyThatConnection(t *testing.T) {
+	hub := NewHub()
+	moved := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	sibling := &Conn{HardwareID: "hw-b", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", moved)
+	_ = hub.Register("3140001", sibling)
+
+	hub.CloseHardware("hw-a", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	assertFarewellThenSentinel(t, moved, "3140009")
+	if len(drainSend(sibling)) != 0 {
+		t.Error("sibling on the same line must be untouched")
+	}
+	hub.CloseHardware("hw-zzz", nil) // unknown hardware is a no-op
+}
+
+func TestCloseLineNoConnectionsIsNoop(t *testing.T) {
+	hub := NewHub()
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+	if hub.ConnectionCount("3140001") != 0 {
+		t.Fatal("nothing should be registered")
 	}
 }
 

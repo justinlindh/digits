@@ -37,7 +37,11 @@ var ErrDraining = errors.New("hub is draining")
 
 // Conn represents an active WebSocket connection from a device to the hub.
 // The Send channel is the only safe write path; all outbound messages are
-// queued here and delivered by the per-connection write pump goroutine.
+// queued here and delivered by the per-connection write pump goroutine. A nil
+// element is the close sentinel: the pump delivers everything queued before
+// it, then closes the socket (queued by closeConn for CloseLine and
+// CloseHardware; Register closes the channel outright when it evicts a
+// connection).
 type Conn struct {
 	WS         *websocket.Conn
 	Number     string
@@ -178,12 +182,24 @@ func (h *Hub) Run(ctx context.Context) {
 // deliverFromRedis attempts local delivery of an envelope received from
 // another pod via Redis.
 func (h *Hub) deliverFromRedis(env *Envelope) {
-	if env.Message == nil {
-		return
-	}
-	data, err := env.Message.Marshal()
+	data, err := marshalOptional(env.Message)
 	if err != nil {
 		slog.Debug("redis: marshal for local delivery failed", "err", err)
+		return
+	}
+
+	// The close types are the only ones where a nil Message is meaningful
+	// (no farewell). Everywhere else a nil payload would be queued as the
+	// close sentinel, so it is refused below.
+	switch env.TargetType {
+	case "close":
+		h.closeLocalLine(env.Target, data)
+		return
+	case "close_hardware":
+		h.closeLocalHardware(env.Target, data)
+		return
+	}
+	if data == nil {
 		return
 	}
 
@@ -225,8 +241,7 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
 
 	case "reconnect":
-		// env.Message is guaranteed non-nil by the early return at the top of
-		// deliverFromRedis.
+		// env.Message is guaranteed non-nil by the nil-data return above.
 		h.mu.RLock()
 		hook := h.reconnectHook
 		h.mu.RUnlock()
@@ -340,9 +355,9 @@ func (h *Hub) SetDashboardEvents(b dashNotifier) {
 }
 
 // Register adds a connection for the given number. Multiple devices on the
-// same line each get their own connection (POTS extension model). If a
-// connection with the same HardwareID is already registered on this number,
-// the old one is closed and replaced.
+// same line each get their own connection (POTS extension model). If the
+// same HardwareID already has a connection, on this number or another, the
+// old one is closed and removed.
 func (h *Hub) Register(number string, conn *Conn) error {
 	h.mu.Lock()
 	if h.draining {
@@ -352,30 +367,26 @@ func (h *Hub) Register(number string, conn *Conn) error {
 
 	conn.Number = number
 
-	// If the same hardware_id already has a connection on this number,
-	// close the old one (device reconnect).
-	existing := h.conns[number]
-	replaced := false
-	for i, old := range existing {
-		if old.HardwareID != "" && old.HardwareID == conn.HardwareID {
-			if old.WS != nil {
-				_ = old.WS.Close()
-			}
-			// Close the old connection's send channel so its write pump exits
-			// (the pump returns on the !ok branch). Double-close is impossible:
-			// replacing the slot in place below makes the old conn invisible to
-			// any later Unregister, and every send into old.Send happens under
-			// h.mu, which we hold here. Draining first would silently drop a
-			// queued outbound frame, so we close unconditionally instead.
-			close(old.Send)
-			existing[i] = conn
-			replaced = true
-			break
+	// A device holds one connection: on a plain reconnect the old socket is
+	// under the same number, after a renumber or move under a different
+	// one. Either way the old connection would keep answering as its number
+	// until its read loop unwinds, and its late Unregister would otherwise
+	// tear down this connection's hardware entry and presence record.
+	// removeLocked closes old.Send (the write pump exits on !ok) without
+	// draining, so a queued outbound frame still gets flushed; double-close
+	// is impossible because the removal makes old invisible to any later
+	// Unregister, and every send into old.Send happens under h.mu.
+	var evictedNumber string
+	if old := h.hwConns[conn.HardwareID]; old != nil {
+		if old.WS != nil {
+			_ = old.WS.Close()
+		}
+		h.removeLocked(old.Number, old)
+		if old.Number != number {
+			evictedNumber = old.Number
 		}
 	}
-	if !replaced {
-		h.conns[number] = append(existing, conn)
-	}
+	h.conns[number] = append(h.conns[number], conn)
 
 	if conn.HardwareID != "" {
 		h.hwConns[conn.HardwareID] = conn
@@ -404,6 +415,15 @@ func (h *Hub) Register(number string, conn *Conn) error {
 			DevMode:         conn.DevMode,
 		})
 	}
+	if evictedNumber != "" {
+		slog.Info("hub evicted stale connection", "hardware_id", conn.HardwareID,
+			"old_number", evictedNumber, "number", number)
+		// The presence record already names the new number, so this only
+		// drops the old line's membership.
+		if ds != nil {
+			ds.SetOffline(context.Background(), evictedNumber, conn.HardwareID)
+		}
+	}
 	return nil
 }
 
@@ -411,31 +431,7 @@ func (h *Hub) Register(number string, conn *Conn) error {
 // conn pointer is removed; other devices on the same line are not affected.
 func (h *Hub) Unregister(number string, conn *Conn) {
 	h.mu.Lock()
-	var changed bool
-	conns := h.conns[number]
-	for i, c := range conns {
-		if c == conn {
-			close(conn.Send)
-			h.conns[number] = append(conns[:i], conns[i+1:]...)
-			if len(h.conns[number]) == 0 {
-				delete(h.conns, number)
-			}
-			if conn.HardwareID != "" {
-				delete(h.hwConns, conn.HardwareID)
-				// Drop the per-handset voicemail count too: the next
-				// reconnect republishes it. Without this a vanished
-				// handset would inflate the line-level sum forever.
-				if perHW, ok := h.voicemailUnheard[number]; ok {
-					delete(perHW, conn.HardwareID)
-					if len(perHW) == 0 {
-						delete(h.voicemailUnheard, number)
-					}
-				}
-			}
-			changed = true
-			break
-		}
-	}
+	changed := h.removeLocked(number, conn)
 	remaining := len(h.conns[number])
 	d := h.dashEvents
 	ds := h.state
@@ -452,18 +448,186 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 	}
 }
 
-// RekeyNumber moves all connections and state from oldNumber to newNumber.
-// Safe to call even if oldNumber has no entries.
-func (h *Hub) RekeyNumber(oldNumber, newNumber string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if cs, ok := h.conns[oldNumber]; ok {
-		h.conns[newNumber] = cs
-		delete(h.conns, oldNumber)
+// removeLocked takes conn out of number's bucket, closing its Send channel,
+// and reports whether it was there. Must be called under h.mu (write).
+func (h *Hub) removeLocked(number string, conn *Conn) bool {
+	conns := h.conns[number]
+	i := slices.Index(conns, conn)
+	if i < 0 {
+		return false
 	}
-	if vm, ok := h.voicemailUnheard[oldNumber]; ok {
-		h.voicemailUnheard[newNumber] = vm
-		delete(h.voicemailUnheard, oldNumber)
+	close(conn.Send)
+	h.conns[number] = append(conns[:i], conns[i+1:]...)
+	if len(h.conns[number]) == 0 {
+		delete(h.conns, number)
+	}
+	if conn.HardwareID != "" {
+		if h.hwConns[conn.HardwareID] == conn {
+			delete(h.hwConns, conn.HardwareID)
+		}
+		// Drop the per-handset voicemail count too: the next
+		// reconnect republishes it. Without this a vanished
+		// handset would inflate the line-level sum forever.
+		if perHW, ok := h.voicemailUnheard[number]; ok {
+			delete(perHW, conn.HardwareID)
+			if len(perHW) == 0 {
+				delete(h.voicemailUnheard, number)
+			}
+		}
+	}
+	return true
+}
+
+// CloseLine ends every connection on number, on this pod and (via Redis) on
+// every other pod, sending farewell first when it is non-nil. A connection's
+// number is fixed for its lifetime: the WebSocket read loop routes every
+// inbound frame as the number captured at register time and unregisters
+// under it. So anything that changes which number a device answers to, or
+// removes the line it answers on, must end the device's current connections
+// and let it register again; the farewell tells it what to register as.
+//
+// Closing is asynchronous: the farewell and then the nil close sentinel are
+// queued on each connection's Send channel, and whoever drains the channel
+// closes the socket and unregisters. The line is empty once every read loop
+// has unwound.
+func (h *Hub) CloseLine(number string, farewell *Message) {
+	data, err := marshalOptional(farewell)
+	if err != nil {
+		slog.Error("CloseLine: marshal farewell failed", "number", number, "err", err)
+		return
+	}
+	h.closeLocalLine(number, data)
+
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge != nil {
+		h.publish(bridge, "close", number, farewell)
+	}
+}
+
+// CloseHardware ends the connection for hardwareID on this pod and (via
+// Redis) on every other pod, sending farewell first when it is non-nil.
+// Unlike SendToHardware it publishes even when a local connection exists:
+// a device that just reconnected to another pod can still have its dying
+// socket registered here, and the point is that the live one ends too.
+func (h *Hub) CloseHardware(hardwareID string, farewell *Message) {
+	data, err := marshalOptional(farewell)
+	if err != nil {
+		slog.Error("CloseHardware: marshal farewell failed", "hardware_id", hardwareID, "err", err)
+		return
+	}
+	h.closeLocalHardware(hardwareID, data)
+
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge != nil {
+		h.publish(bridge, "close_hardware", hardwareID, farewell)
+	}
+}
+
+// marshalOptional marshals msg, mapping a nil message to a nil payload.
+func marshalOptional(msg *Message) ([]byte, error) {
+	if msg == nil {
+		return nil, nil
+	}
+	return msg.Marshal()
+}
+
+// closeLocalLine queues farewell (when non-nil) then the close sentinel on
+// every local connection for number.
+func (h *Hub) closeLocalLine(number string, farewell []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, conn := range h.conns[number] {
+		h.closeConn(conn, farewell)
+	}
+}
+
+// closeLocalHardware queues farewell (when non-nil) then the close sentinel
+// on the local connection for hardwareID, if there is one.
+func (h *Hub) closeLocalHardware(hardwareID string, farewell []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if conn := h.hwConns[hardwareID]; conn != nil {
+		h.closeConn(conn, farewell)
+	}
+}
+
+// closeConn queues farewell (when non-nil) then the nil close sentinel on
+// conn. Must be called under h.mu like every other send path so the channel
+// cannot be closed mid-send. A dropped farewell counts as a dropped send; a
+// connection whose buffer cannot take the sentinel is retried in the
+// background so whatever is queued ahead of it is still delivered.
+func (h *Hub) closeConn(conn *Conn, farewell []byte) {
+	if farewell != nil {
+		select {
+		case conn.Send <- farewell:
+		default:
+			slog.Warn("close: send buffer full, farewell dropped",
+				"number", conn.Number, "hardware_id", conn.HardwareID)
+			if h.dropHook != nil {
+				h.dropHook()
+			}
+		}
+	}
+	select {
+	case conn.Send <- nil:
+	default:
+		go h.retryClose(conn)
+	}
+}
+
+// closeRetryTimeout bounds retryClose. It is longer than the WebSocket write
+// timeout so a pump that is blocked on a dead peer fails its write and
+// unwinds on its own before the socket is closed under it. Polling backs off
+// from sendRetryInterval to closeRetryMaxInterval.
+const (
+	closeRetryTimeout     = 15 * time.Second
+	closeRetryMaxInterval = 500 * time.Millisecond
+)
+
+// retryClose keeps re-offering the close sentinel to a connection whose
+// buffer was full until it fits or the connection has unregistered; past
+// closeRetryTimeout the socket is closed outright so the read loop still
+// unwinds, which drops whatever is still queued and counts as a drop.
+func (h *Hub) retryClose(conn *Conn) {
+	deadline := time.Now().Add(closeRetryTimeout)
+	interval := sendRetryInterval
+	for time.Now().Before(deadline) {
+		time.Sleep(interval)
+		interval = min(2*interval, closeRetryMaxInterval)
+		if h.offerClose(conn) {
+			return
+		}
+	}
+	slog.Warn("close: send buffer still full, closing socket",
+		"number", conn.Number, "hardware_id", conn.HardwareID)
+	h.mu.RLock()
+	dropHook := h.dropHook
+	h.mu.RUnlock()
+	if dropHook != nil {
+		dropHook()
+	}
+	if conn.WS != nil {
+		_ = conn.WS.Close()
+	}
+}
+
+// offerClose queues the close sentinel on conn if there is room, reporting
+// whether retryClose is done: the sentinel is queued or conn is gone.
+func (h *Hub) offerClose(conn *Conn) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if !h.connIsCurrentLocked(conn) {
+		return true
+	}
+	select {
+	case conn.Send <- nil:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -501,16 +665,21 @@ func (h *Hub) ConnectionCount(number string) int {
 
 // ConnIsCurrent reports whether conn is still the hub's registered connection
 // on its line, compared by identity. When a device reconnects with the same
-// hardware_id, Register replaces the previous conn in place, so the displaced
-// conn is no longer current even before its read loop runs Unregister.
-// Disconnect handling uses this to avoid tearing down a line that a newer
-// connection already owns.
+// hardware_id, Register removes the previous conn, so the displaced conn is
+// no longer current even before its read loop runs Unregister. Disconnect
+// handling uses this to avoid tearing down a line that a newer connection
+// already owns.
 func (h *Hub) ConnIsCurrent(conn *Conn) bool {
 	if conn == nil {
 		return false
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	return h.connIsCurrentLocked(conn)
+}
+
+// connIsCurrentLocked is ConnIsCurrent for callers already holding h.mu.
+func (h *Hub) connIsCurrentLocked(conn *Conn) bool {
 	return slices.Contains(h.conns[conn.Number], conn)
 }
 
@@ -592,8 +761,8 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	return nil
 }
 
-// sendRetryInterval is how long SendToWithTimeout sleeps between attempts to
-// re-offer a message to a device whose send buffer was full.
+// sendRetryInterval is how long SendToWithTimeout and retryClose sleep
+// between attempts to re-offer a frame to a device whose send buffer was full.
 const sendRetryInterval = 20 * time.Millisecond
 
 // SendToWithTimeout delivers msg to every device on number, retrying local

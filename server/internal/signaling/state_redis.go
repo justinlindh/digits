@@ -80,14 +80,24 @@ func (s *DeviceState) SetOnline(ctx context.Context, number string, p DevicePres
 	}
 }
 
-// setOfflineScript deletes a device presence record only if this pod still
-// owns it (or no owner is recorded). A device that reconnects to another pod
-// while the old pod's read loop is still unwinding has its presence hash
-// rewritten with the new pod_id before the old pod's Unregister runs
-// SetOffline; an unconditional delete here would erase the live record and
-// make the device look offline cluster-wide until its next SetOnline.
+// setOfflineScript deletes a device presence record only if it still
+// belongs to this pod under this number (fields that were never recorded
+// count as matching). A device that reconnects, to another pod or under
+// another number after a renumber or move, has its presence hash rewritten
+// before the old connection's Unregister runs SetOffline; an unconditional
+// delete here would erase the live record and make the device look offline
+// cluster-wide until its next SetOnline.
+//
+// When the record is live under a different number, the membership of the
+// old line is still stale and is dropped without touching the record. When
+// it is live on another pod under the same number, nothing is touched.
 var setOfflineScript = redis.NewScript(`
 local pod = redis.call('HGET', KEYS[1], 'pod_id')
+local num = redis.call('HGET', KEYS[1], 'number')
+if num ~= false and num ~= ARGV[3] then
+	redis.call('SREM', KEYS[2], ARGV[2])
+	return 0
+end
 if pod == false or pod == '' or pod == ARGV[1] then
 	redis.call('DEL', KEYS[1])
 	redis.call('SREM', KEYS[2], ARGV[2])
@@ -102,7 +112,7 @@ func (s *DeviceState) SetOffline(ctx context.Context, number, hardwareID string)
 	devKey := deviceKeyPrefix + hardwareID
 	setKey := lineDevicesPrefix + number
 
-	if err := setOfflineScript.Run(ctx, s.client, []string{devKey, setKey}, s.podID, hardwareID).Err(); err != nil {
+	if err := setOfflineScript.Run(ctx, s.client, []string{devKey, setKey}, s.podID, hardwareID, number).Err(); err != nil {
 		slog.ErrorContext(ctx, "redis: SetOffline failed", "number", number, "hardware_id", hardwareID, "err", err)
 	}
 }

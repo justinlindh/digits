@@ -37,25 +37,32 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
-
-	code, err := pairingStore.GenerateCode(context.Background(), hardwareID)
-	if err != nil {
-		t.Fatalf("generate code: %v", err)
-	}
-
-	token, _, err = pairingStore.ClaimDevice(context.Background(), code, number, "Test Phone", "Test Phone", hh.ID)
-	if err != nil {
-		t.Fatalf("claim device: %v", err)
-	}
-
 	t.Cleanup(func() {
-		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
-		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
 		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
 		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
+	token = pairDevice(t, database, pairingStore, hh.ID, hardwareID, number, "Test Phone")
 	return hardwareID, number, token
+}
+
+// pairDevice pairs hardwareID under number in household hhID and returns the
+// device token. Registers cleanup of the device and line rows.
+func pairDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, hhID, hardwareID, number, label string) string {
+	t.Helper()
+	code, err := pairingStore.GenerateCode(context.Background(), hardwareID)
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+	token, _, err := pairingStore.ClaimDevice(context.Background(), code, number, label, label, hhID)
+	if err != nil {
+		t.Fatalf("claim device under %s: %v", number, err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+	})
+	return token
 }
 
 func TestWSRegister_MissingHardwareID(t *testing.T) {
