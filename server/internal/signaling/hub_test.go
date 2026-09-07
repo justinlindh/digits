@@ -501,7 +501,7 @@ func TestRetryCloseStopsAfterUnregister(t *testing.T) {
 		t.Fatalf("expected only the queued frame before the close, got %d", len(frames))
 	}
 
-	time.Sleep(10 * closeRetryInterval)
+	time.Sleep(10 * sendRetryInterval)
 }
 
 // A phone told its line changed comes back under the new number while its

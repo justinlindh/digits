@@ -353,9 +353,9 @@ func (h *Hub) SetDashboardEvents(b dashNotifier) {
 }
 
 // Register adds a connection for the given number. Multiple devices on the
-// same line each get their own connection (POTS extension model). If a
-// connection with the same HardwareID is already registered on this number,
-// the old one is closed and replaced.
+// same line each get their own connection (POTS extension model). If the
+// same HardwareID already has a connection, on this number or another, the
+// old one is closed and removed.
 func (h *Hub) Register(number string, conn *Conn) error {
 	h.mu.Lock()
 	if h.draining {
@@ -365,44 +365,26 @@ func (h *Hub) Register(number string, conn *Conn) error {
 
 	conn.Number = number
 
-	// The same hardware coming back under a different number (its line was
-	// renumbered, or it was moved) must not leave the previous connection
-	// behind: that one keeps answering as the old number until its read
-	// loop unwinds, and its late Unregister would otherwise tear down this
-	// connection's hardware entry and presence record.
+	// A device holds one connection: on a plain reconnect the old socket is
+	// under the same number, after a renumber or move under a different
+	// one. Either way the old connection would keep answering as its number
+	// until its read loop unwinds, and its late Unregister would otherwise
+	// tear down this connection's hardware entry and presence record.
+	// removeLocked closes old.Send (the write pump exits on !ok) without
+	// draining, so a queued outbound frame still gets flushed; double-close
+	// is impossible because the removal makes old invisible to any later
+	// Unregister, and every send into old.Send happens under h.mu.
 	var evictedNumber string
-	if old := h.hwConns[conn.HardwareID]; old != nil && old.Number != number {
+	if old := h.hwConns[conn.HardwareID]; old != nil {
 		if old.WS != nil {
 			_ = old.WS.Close()
 		}
 		h.removeLocked(old.Number, old)
-		evictedNumber = old.Number
-	}
-
-	// If the same hardware_id already has a connection on this number,
-	// close the old one (device reconnect).
-	existing := h.conns[number]
-	replaced := false
-	for i, old := range existing {
-		if old.HardwareID != "" && old.HardwareID == conn.HardwareID {
-			if old.WS != nil {
-				_ = old.WS.Close()
-			}
-			// Close the old connection's send channel so its write pump exits
-			// (the pump returns on the !ok branch). Double-close is impossible:
-			// replacing the slot in place below makes the old conn invisible to
-			// any later Unregister, and every send into old.Send happens under
-			// h.mu, which we hold here. Draining first would silently drop a
-			// queued outbound frame, so we close unconditionally instead.
-			close(old.Send)
-			existing[i] = conn
-			replaced = true
-			break
+		if old.Number != number {
+			evictedNumber = old.Number
 		}
 	}
-	if !replaced {
-		h.conns[number] = append(existing, conn)
-	}
+	h.conns[number] = append(h.conns[number], conn)
 
 	if conn.HardwareID != "" {
 		h.hwConns[conn.HardwareID] = conn
@@ -416,17 +398,10 @@ func (h *Hub) Register(number string, conn *Conn) error {
 	slog.Debug("hub registered", "number", number, "hardware_id", conn.HardwareID,
 		"devices_on_line", devCount)
 
-	if evictedNumber != "" {
-		slog.Info("hub evicted stale connection", "hardware_id", conn.HardwareID,
-			"old_number", evictedNumber, "number", number)
-	}
 	if d != nil {
 		d.Notify()
 	}
 	if ds != nil {
-		if evictedNumber != "" {
-			ds.SetOffline(context.Background(), evictedNumber, conn.HardwareID)
-		}
 		ds.SetOnline(context.Background(), number, DevicePresence{
 			PodID:           ds.PodID(),
 			HardwareID:      conn.HardwareID,
@@ -437,6 +412,15 @@ func (h *Hub) Register(number string, conn *Conn) error {
 			RemoteAddr:      conn.RemoteAddr,
 			DevMode:         conn.DevMode,
 		})
+	}
+	if evictedNumber != "" {
+		slog.Info("hub evicted stale connection", "hardware_id", conn.HardwareID,
+			"old_number", evictedNumber, "number", number)
+		// The presence record already names the new number, so this only
+		// drops the old line's membership.
+		if ds != nil {
+			ds.SetOffline(context.Background(), evictedNumber, conn.HardwareID)
+		}
 	}
 	return nil
 }
@@ -593,36 +577,26 @@ func (h *Hub) closeConn(conn *Conn, farewell []byte) {
 	}
 }
 
-// closeRetryInterval and closeRetryTimeout bound retryClose. The timeout is
-// longer than the WebSocket write timeout so a pump that is blocked on a
-// dead peer fails its write and unwinds on its own before the socket is
-// closed under it.
+// closeRetryTimeout bounds retryClose. It is longer than the WebSocket write
+// timeout so a pump that is blocked on a dead peer fails its write and
+// unwinds on its own before the socket is closed under it. Polling backs off
+// from sendRetryInterval to closeRetryMaxInterval.
 const (
-	closeRetryInterval = 10 * time.Millisecond
-	closeRetryTimeout  = 15 * time.Second
+	closeRetryTimeout     = 15 * time.Second
+	closeRetryMaxInterval = 500 * time.Millisecond
 )
 
-// retryClose keeps trying to queue the close sentinel on a connection whose
-// buffer was full. The pump either drains the buffer or fails its write and
-// unwinds within one write timeout, so the retry stops as soon as the
-// sentinel fits or the connection has unregistered; past closeRetryTimeout
-// the socket is closed outright so the read loop still unwinds.
+// retryClose keeps re-offering the close sentinel to a connection whose
+// buffer was full until it fits or the connection has unregistered; past
+// closeRetryTimeout the socket is closed outright so the read loop still
+// unwinds.
 func (h *Hub) retryClose(conn *Conn) {
 	deadline := time.Now().Add(closeRetryTimeout)
+	interval := sendRetryInterval
 	for time.Now().Before(deadline) {
-		time.Sleep(closeRetryInterval)
-		h.mu.RLock()
-		registered := slices.Contains(h.conns[conn.Number], conn)
-		queued := false
-		if registered {
-			select {
-			case conn.Send <- nil:
-				queued = true
-			default:
-			}
-		}
-		h.mu.RUnlock()
-		if !registered || queued {
+		time.Sleep(interval)
+		interval = min(2*interval, closeRetryMaxInterval)
+		if h.offerClose(conn) {
 			return
 		}
 	}
@@ -630,6 +604,22 @@ func (h *Hub) retryClose(conn *Conn) {
 		"number", conn.Number, "hardware_id", conn.HardwareID)
 	if conn.WS != nil {
 		_ = conn.WS.Close()
+	}
+}
+
+// offerClose queues the close sentinel on conn if there is room, reporting
+// whether retryClose is done: the sentinel is queued or conn is gone.
+func (h *Hub) offerClose(conn *Conn) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if !h.connIsCurrentLocked(conn) {
+		return true
+	}
+	select {
+	case conn.Send <- nil:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -667,16 +657,21 @@ func (h *Hub) ConnectionCount(number string) int {
 
 // ConnIsCurrent reports whether conn is still the hub's registered connection
 // on its line, compared by identity. When a device reconnects with the same
-// hardware_id, Register replaces the previous conn in place, so the displaced
-// conn is no longer current even before its read loop runs Unregister.
-// Disconnect handling uses this to avoid tearing down a line that a newer
-// connection already owns.
+// hardware_id, Register removes the previous conn, so the displaced conn is
+// no longer current even before its read loop runs Unregister. Disconnect
+// handling uses this to avoid tearing down a line that a newer connection
+// already owns.
 func (h *Hub) ConnIsCurrent(conn *Conn) bool {
 	if conn == nil {
 		return false
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	return h.connIsCurrentLocked(conn)
+}
+
+// connIsCurrentLocked is ConnIsCurrent for callers already holding h.mu.
+func (h *Hub) connIsCurrentLocked(conn *Conn) bool {
 	return slices.Contains(h.conns[conn.Number], conn)
 }
 
@@ -758,8 +753,8 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	return nil
 }
 
-// sendRetryInterval is how long SendToWithTimeout sleeps between attempts to
-// re-offer a message to a device whose send buffer was full.
+// sendRetryInterval is how long SendToWithTimeout and retryClose sleep
+// between attempts to re-offer a frame to a device whose send buffer was full.
 const sendRetryInterval = 20 * time.Millisecond
 
 // SendToWithTimeout delivers msg to every device on number, retrying local

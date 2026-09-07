@@ -579,7 +579,12 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 	}
 	const busyMsg = "cannot change number while on an active call"
 
-	if h.lineBusy(r.Context(), oldNumber) {
+	// Detached from the request: once the number change is committed the
+	// revert and socket close below must run even if the admin's browser
+	// has gone away, or the phones are left answering as the old number.
+	ctx := context.WithoutCancel(r.Context())
+
+	if h.lineBusy(ctx, oldNumber) {
 		reject(busyMsg)
 		return
 	}
@@ -594,7 +599,6 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ctx := r.Context()
 	taken, err := h.lineStore.NumberExistsExcluding(ctx, newNumber, ln.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "number uniqueness check failed", "err", err, "line_id", ln.ID)
@@ -611,11 +615,6 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-
-	// The change is committed; the rest must run to completion even if the
-	// admin's browser has gone away, or a revert could be cancelled and the
-	// phones left answering as the old number.
-	ctx = context.WithoutCancel(ctx)
 
 	// The busy check above and the update are not atomic: a call can start
 	// on the old number in between, and the socket close below would drop
@@ -1192,7 +1191,10 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	rejectBusy := func() {
 		http.Redirect(w, r, "/phones/"+number+"?number_error="+url.QueryEscape("cannot move a handset while its line is on an active call"), http.StatusSeeOther)
 	}
-	if h.lineBusy(r.Context(), number) {
+	// Detached from the request for the same reason as a number change:
+	// the revert and socket close after the move must run to completion.
+	ctx := context.WithoutCancel(r.Context())
+	if h.lineBusy(ctx, number) {
 		rejectBusy()
 		return
 	}
@@ -1213,7 +1215,7 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify target line belongs to same household.
-	tgtLn, err := h.lineStore.GetByID(r.Context(), targetLineID)
+	tgtLn, err := h.lineStore.GetByID(ctx, targetLineID)
 	if err != nil {
 		http.Error(w, "target line not found", http.StatusNotFound)
 		return
@@ -1223,9 +1225,9 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	devices, listErr := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	devices, listErr := h.deviceStore.ListByLine(ctx, srcLn.ID)
 	if listErr != nil {
-		slog.ErrorContext(r.Context(), "list devices for line", "line_id", srcLn.ID, "err", listErr)
+		slog.ErrorContext(ctx, "list devices for line", "line_id", srcLn.ID, "err", listErr)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -1256,20 +1258,14 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		dev = &devices[0]
 	}
 
-	// Move the device. From here on the work runs to completion even if the
-	// admin's browser has gone away: a cancelled revert would leave the
-	// handset moved but its socket still answering on the source line.
-	ctx := context.WithoutCancel(r.Context())
 	if err := h.deviceStore.Reassign(ctx, dev.ID, targetLineID); err != nil {
 		slog.ErrorContext(ctx, "move device failed", "device_id", dev.ID, "target", targetLineID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Same non-atomic window as a number change: a call can start on the
-	// source line between the busy check and the move. Hand the handset
-	// back rather than close a socket that is carrying a call. If the
-	// revert itself fails the move stands, so fall through and close.
+	// Same window and same fall-through as the busy re-check in
+	// handlePhoneNumberPost, for a single handset instead of a line.
 	if h.lineBusy(ctx, number) {
 		err := h.deviceStore.Reassign(ctx, dev.ID, srcLn.ID)
 		if err == nil {

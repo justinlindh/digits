@@ -289,8 +289,9 @@ func TestDeliverFromRedisClosesLocalLine(t *testing.T) {
 	assertFarewellThenSentinel(t, conn, "3140009")
 }
 
-// CloseHardware publishes a "close_hardware" envelope only when the device
-// is not connected here, mirroring SendToHardware: one device, one socket.
+// CloseHardware publishes a "close_hardware" envelope whether or not the
+// device is connected here: the local entry can be a dying socket while the
+// live one is on another pod.
 func TestCloseHardwarePublishesEvenWhenLocal(t *testing.T) {
 	hub := NewHub()
 	fake := newFakeRedis()
