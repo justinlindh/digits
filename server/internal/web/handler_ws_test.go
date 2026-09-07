@@ -268,55 +268,81 @@ func TestWSRegister_UnpairedDevice_GetsPairingCode(t *testing.T) {
 	}
 }
 
-// A paired device clears its own server-side pairing by sending a repair
-// message (the *#0* service code) before reboot. After repair the stored token
-// and paired_at are gone, so the device's next token-less register is treated
-// as a fresh pair-up instead of being rejected for a missing token.
-func TestWSRegister_RepairUnpairsDevice(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	srv := httptest.NewServer(h.Router())
-	defer srv.Close()
-
-	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
-
-	// Precondition: the device is paired and its token validates.
-	paired, valid, err := h.deviceStore.AuthStatus(context.Background(), hwID, token)
-	if err != nil {
-		t.Fatalf("auth status before repair: %v", err)
+// Repair always targets the authenticated connection's device. The payload's
+// hardware ID is untrusted and optional because older clients may omit it.
+func TestWSRepairUsesAuthenticatedHardwareID(t *testing.T) {
+	tests := []struct {
+		name             string
+		repairHardwareID func(authenticatedID, otherID string) string
+	}{
+		{
+			name: "foreign payload hardware ID",
+			repairHardwareID: func(_, otherID string) string {
+				return otherID
+			},
+		},
+		{
+			name: "omitted payload hardware ID",
+			repairHardwareID: func(_, _ string) string {
+				return ""
+			},
+		},
 	}
-	if !paired || !valid {
-		t.Fatalf("device should be paired with a valid token before repair (paired=%v valid=%v)", paired, valid)
-	}
 
-	ws := dialWS(t, srv)
-	sendMsg(t, ws, signaling.Message{
-		Type:        signaling.TypeRegister,
-		Number:      number,
-		HardwareID:  hwID,
-		DeviceToken: token,
-	})
-	// Register runs in the read goroutine; wait for it so the read pump is live
-	// to receive the repair message that follows.
-	waitForRegister(t, h.hub, number)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, database, authStore := setupHandler(t)
+			srv := httptest.NewServer(h.Router())
+			defer srv.Close()
 
-	sendMsg(t, ws, signaling.Message{
-		Type:       signaling.TypeRepair,
-		HardwareID: hwID,
-	})
+			authenticatedID, number, authenticatedToken := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+			otherID, _, otherToken := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
-	// Unpair runs in the read pump; poll until the device row reflects it.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		stillPaired, _, err := h.deviceStore.AuthStatus(context.Background(), hwID, token)
-		if err != nil {
-			t.Fatalf("auth status after repair: %v", err)
-		}
-		if !stillPaired {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("device still paired 2s after repair message")
-		}
-		time.Sleep(5 * time.Millisecond)
+			ws := dialWS(t, srv)
+			sendMsg(t, ws, signaling.Message{
+				Type:        signaling.TypeRegister,
+				Number:      number,
+				HardwareID:  authenticatedID,
+				DeviceToken: authenticatedToken,
+			})
+			waitForRegister(t, h.hub, number)
+
+			sendMsg(t, ws, signaling.Message{
+				Type:       signaling.TypeRepair,
+				HardwareID: tt.repairHardwareID(authenticatedID, otherID),
+			})
+
+			deadline := time.Now().Add(2 * time.Second)
+			for {
+				authenticatedPaired, _, err := h.deviceStore.AuthStatus(context.Background(), authenticatedID, authenticatedToken)
+				if err != nil {
+					t.Fatalf("authenticated device status after repair: %v", err)
+				}
+				otherPaired, _, err := h.deviceStore.AuthStatus(context.Background(), otherID, otherToken)
+				if err != nil {
+					t.Fatalf("other device status after repair: %v", err)
+				}
+				if !authenticatedPaired || !otherPaired || time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+
+			authenticatedPaired, authenticatedValid, err := h.deviceStore.AuthStatus(context.Background(), authenticatedID, authenticatedToken)
+			if err != nil {
+				t.Fatalf("authenticated device final status: %v", err)
+			}
+			if authenticatedPaired || authenticatedValid {
+				t.Errorf("authenticated device remained paired after repair (paired=%v valid=%v)", authenticatedPaired, authenticatedValid)
+			}
+
+			otherPaired, otherValid, err := h.deviceStore.AuthStatus(context.Background(), otherID, otherToken)
+			if err != nil {
+				t.Fatalf("other device final status: %v", err)
+			}
+			if !otherPaired || !otherValid {
+				t.Errorf("repair changed other device (paired=%v valid=%v)", otherPaired, otherValid)
+			}
+		})
 	}
 }

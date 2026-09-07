@@ -10,9 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
+
+const testSHA256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func newTestServer(idx ReleaseIndex) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +35,7 @@ func TestCheckVersion_TargetedUpdate(t *testing.T) {
 			Latest: "1.1.0",
 			Releases: map[string]*Release{
 				"1.0.0": {Version: "1.0.0", URL: "https://example.com/pi/1.0.0", SHA256: "aaa"},
-				"1.1.0": {Version: "1.1.0", URL: "https://example.com/pi/1.1.0", SHA256: "bbb"},
+				"1.1.0": {Version: "1.1.0", URL: "https://example.com/pi/1.1.0", SHA256: testSHA256},
 			},
 		},
 		Firmware: ComponentIndex{
@@ -71,13 +74,13 @@ func TestCheckVersion_EmptyTargetsUsesLatest(t *testing.T) {
 		Pi: ComponentIndex{
 			Latest: "1.1.0",
 			Releases: map[string]*Release{
-				"1.1.0": {Version: "1.1.0", URL: "https://example.com/pi/1.1.0", SHA256: "bbb"},
+				"1.1.0": {Version: "1.1.0", URL: "https://example.com/pi/1.1.0", SHA256: testSHA256},
 			},
 		},
 		Firmware: ComponentIndex{
 			Latest: "0.5.0",
 			Releases: map[string]*Release{
-				"0.5.0": {Version: "0.5.0", URL: "https://example.com/fw/0.5.0", SHA256: "ccc"},
+				"0.5.0": {Version: "0.5.0", URL: "https://example.com/fw/0.5.0", SHA256: testSHA256},
 			},
 		},
 	}
@@ -178,6 +181,41 @@ func TestDownload_VerifiesAndWrites(t *testing.T) {
 	}
 }
 
+func TestDownload_RejectsInvalidExpectedSHA256(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("unverified artifact"))
+	}))
+	defer srv.Close()
+
+	for _, expectedSHA := range []string{"", "not-a-sha256", strings.Repeat("a", 63)} {
+		t.Run(fmt.Sprintf("length_%d", len(expectedSHA)), func(t *testing.T) {
+			u := New(Config{StagingDir: t.TempDir()})
+			_, err := u.Download(srv.URL, "digitsd", expectedSHA)
+			if err == nil || !strings.Contains(err.Error(), "invalid expected sha256") {
+				t.Fatalf("Download() accepted invalid SHA256 %q", expectedSHA)
+			}
+		})
+	}
+}
+
+func TestCheckVersion_RejectsReleaseWithoutValidSHA256(t *testing.T) {
+	for _, sha := range []string{"", "not-a-sha256"} {
+		t.Run(fmt.Sprintf("length_%d", len(sha)), func(t *testing.T) {
+			srv := newTestServer(ReleaseIndex{
+				Pi: ComponentIndex{Latest: "1.1.0", Releases: map[string]*Release{
+					"1.1.0": {Version: "1.1.0", URL: "https://example.com/pi/1.1.0", SHA256: sha},
+				}},
+			})
+			defer srv.Close()
+
+			u := New(Config{ServerBaseURL: srv.URL, CurrentPiVersion: "1.0.0"})
+			if _, err := u.CheckVersion("", ""); err == nil {
+				t.Fatalf("CheckVersion() accepted SHA256 %q", sha)
+			}
+		})
+	}
+}
+
 func TestDownload_StalledBodyHitsDeadline(t *testing.T) {
 	// Server sends headers then stalls forever without sending the body. The
 	// per-request context deadline must abort the download instead of blocking
@@ -201,7 +239,7 @@ func TestDownload_StalledBodyHitsDeadline(t *testing.T) {
 	u.downloadTimeout = 200 * time.Millisecond
 
 	start := time.Now()
-	_, err := u.Download(srv.URL+"/artifact", "digitsd", "")
+	_, err := u.Download(srv.URL+"/artifact", "digitsd", testSHA256)
 	if err == nil {
 		t.Fatal("expected error from stalled download, got nil")
 	}
@@ -269,6 +307,105 @@ func TestDownload_ResumesPartialAfterFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(tmp + ".sha"); !os.IsNotExist(err) {
 		t.Errorf("resume marker not cleaned up after success: %v", err)
+	}
+}
+
+func TestDownload_ResumeSurvivesTransientHTTPFailureAndRetries(t *testing.T) {
+	for _, transientStatus := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(transientStatus), func(t *testing.T) {
+			body := []byte("complete artifact bytes")
+			sum := sha256.Sum256(body)
+			wantSHA := hex.EncodeToString(sum[:])
+			offset := 8
+			requests := 0
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if got, want := r.Header.Get("Range"), fmt.Sprintf("bytes=%d-", offset); got != want {
+					t.Errorf("Range header = %q, want %q", got, want)
+				}
+				if requests == 1 {
+					w.WriteHeader(transientStatus)
+					return
+				}
+				w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, len(body)-1, len(body)))
+				w.WriteHeader(http.StatusPartialContent)
+				_, _ = w.Write(body[offset:])
+			}))
+			defer srv.Close()
+
+			staging := t.TempDir()
+			tmp := filepath.Join(staging, "digitsd.tmp")
+			if err := os.WriteFile(tmp, body[:offset], 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(tmp+".sha", []byte(wantSHA), 0600); err != nil {
+				t.Fatal(err)
+			}
+			u := New(Config{StagingDir: staging})
+
+			if _, err := u.Download(srv.URL, "digitsd", wantSHA); err == nil {
+				t.Fatal("expected transient HTTP error")
+			}
+			if got, err := os.ReadFile(tmp); err != nil || string(got) != string(body[:offset]) {
+				t.Fatalf("transient error destroyed partial: data=%q err=%v", got, err)
+			}
+			dest, err := u.Download(srv.URL, "digitsd", wantSHA)
+			if err != nil {
+				t.Fatalf("retry Download() error: %v", err)
+			}
+			if got, err := os.ReadFile(dest); err != nil || string(got) != string(body) {
+				t.Fatalf("resumed artifact = %q, err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestDownload_RangeNotSatisfiableDropsPartial(t *testing.T) {
+	body := []byte("partial")
+	sum := sha256.Sum256([]byte("complete artifact"))
+	wantSHA := hex.EncodeToString(sum[:])
+	staging := t.TempDir()
+	tmp := filepath.Join(staging, "digitsd.tmp")
+	if err := os.WriteFile(tmp, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tmp+".sha", []byte(wantSHA), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+	}))
+	defer srv.Close()
+
+	u := New(Config{StagingDir: staging})
+	if _, err := u.Download(srv.URL, "digitsd", wantSHA); err == nil {
+		t.Fatal("expected range error")
+	}
+	for _, path := range []string{tmp, tmp + ".sha"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("stale resume file not removed: %s: %v", path, err)
+		}
+	}
+}
+
+func TestDownload_ChecksumMismatchDropsPartial(t *testing.T) {
+	body := []byte("unexpected artifact")
+	staging := t.TempDir()
+	tmp := filepath.Join(staging, "digitsd.tmp")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	u := New(Config{StagingDir: staging})
+	if _, err := u.Download(srv.URL, "digitsd", testSHA256); err == nil {
+		t.Fatal("expected checksum mismatch")
+	}
+	for _, path := range []string{tmp, tmp + ".sha"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("mismatched artifact not removed: %s: %v", path, err)
+		}
 	}
 }
 
@@ -380,7 +517,7 @@ func TestCheckVersion_ExplicitTargetStillDowngrades(t *testing.T) {
 	// rollback to an older release must still be offered.
 	srv := newTestServer(ReleaseIndex{
 		Pi: ComponentIndex{Latest: "1.44.8", Releases: map[string]*Release{
-			"1.44.6": {Version: "1.44.6"},
+			"1.44.6": {Version: "1.44.6", SHA256: testSHA256},
 			"1.44.8": {Version: "1.44.8"},
 		}},
 	})

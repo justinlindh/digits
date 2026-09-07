@@ -42,6 +42,12 @@ The version marker contains a short string (e.g. a commit hash or build timestam
 
 This check-and-skip approach keeps normal startup fast and avoids unnecessary writes to the flash storage.
 
+### OTA Artifact Integrity
+
+Unattended Pi and Pico updates require a companion `.sha256` release asset containing a valid 64-character SHA256 digest. The signaling server omits binary releases with a missing, unavailable, or malformed checksum from its release index, and `digitsd` independently rejects incomplete checksum metadata before downloading or installing anything.
+
+Older Pi and Pico releases that lack checksum sidecars are intentionally unavailable for unattended installation. Publish a new release with the matching sidecar rather than weakening verification. Server container releases use the container registry delivery path and remain in the index without a binary checksum sidecar.
+
 ## Factory Reset
 
 A factory reset restores the device to its out-of-box state: rootfs is repopulated from the compressed factory image stored on the recovery partition, the data partition is wiped, and the device reboots into first-boot setup.
