@@ -2,10 +2,14 @@ package updates
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -179,7 +183,7 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			continue
 		}
 
-		var binaryURL, sha256 string
+		var binaryURL, sha256sum string
 		if component == ComponentServer {
 			binaryURL = fmt.Sprintf("ghcr.io/%s/%s/signald:v%s", g.owner, g.repo, version)
 		} else {
@@ -188,8 +192,22 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			if binaryURL == "" {
 				continue
 			}
-			if sha256URL != "" {
-				sha256 = g.fetchSHA256(ctx, sha256URL)
+			if sha256URL == "" {
+				slog.WarnContext(ctx, "skipping binary release without checksum", "component", component, "version", version)
+				continue
+			}
+			var err error
+			sha256sum, err = g.fetchSHA256(ctx, sha256URL)
+			if err != nil {
+				if transientChecksumError(err) {
+					return nil, fmt.Errorf("fetch %s checksum for version %s: %w", component, version, err)
+				}
+				slog.WarnContext(ctx, "skipping binary release with unavailable checksum", "component", component, "version", version, "error", err)
+				continue
+			}
+			if !validSHA256(sha256sum) {
+				slog.WarnContext(ctx, "skipping binary release with invalid checksum", "component", component, "version", version)
+				continue
 			}
 		}
 
@@ -200,7 +218,7 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 
 		r := &Release{
 			Version:  version,
-			SHA256:   sha256,
+			SHA256:   sha256sum,
 			URL:      binaryURL,
 			Date:     date,
 			Notes:    StripGroomedSentinel(rel.Body),
@@ -222,31 +240,50 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 }
 
 // fetchSHA256 downloads a .sha256 asset and returns the trimmed content.
-// Returns "" on any error.
-func (g *GitHubReleases) fetchSHA256(ctx context.Context, url string) string {
+func (g *GitHubReleases) fetchSHA256(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", &httpError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 128))
 	if err != nil {
-		return ""
+		return "", err
 	}
 
-	return strings.TrimSpace(string(body))
+	return strings.TrimSpace(string(body)), nil
+}
+
+func validSHA256(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
+}
+
+func transientChecksumError(err error) bool {
+	var httpErr *httpError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusUnauthorized ||
+			httpErr.StatusCode == http.StatusForbidden ||
+			httpErr.StatusCode == http.StatusRequestTimeout ||
+			httpErr.StatusCode == http.StatusTooEarly ||
+			httpErr.StatusCode == http.StatusTooManyRequests ||
+			(httpErr.StatusCode >= 500 && httpErr.StatusCode <= 599)
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // parseTag parses a GitHub release tag into a component name and version.
