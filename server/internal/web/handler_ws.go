@@ -194,6 +194,10 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 				if !ok {
 					return
 				}
+				if data == nil {
+					closeQueuedConn(ws, conn)
+					return
+				}
 				if err := ws.SetWriteDeadline(time.Now().Add(wsWriteTimeout)); err != nil {
 					return
 				}
@@ -253,6 +257,30 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 		msg.HardwareID = conn.HardwareID
 		h.relay.HandleMessage(ctx, number, msg)
+	}
+}
+
+// closeQueuedConn finishes a Hub.CloseLine on the write pump's goroutine: it
+// sends a close frame and then waits for the read loop to unwind, which
+// happens when the device answers the close handshake and Unregister closes
+// conn.Send. Closing the socket outright here could reset the connection
+// before the device has read the frames queued ahead of the sentinel. If the
+// device never answers, the pump's deferred ws.Close forces the socket shut
+// once the wait expires.
+func closeQueuedConn(ws *websocket.Conn, conn *signaling.Conn) {
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "line closed")
+	_ = ws.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(wsWriteTimeout))
+	timer := time.NewTimer(wsWriteTimeout)
+	defer timer.Stop()
+	for {
+		select {
+		case _, ok := <-conn.Send:
+			if !ok {
+				return
+			}
+		case <-timer.C:
+			return
+		}
 	}
 }
 

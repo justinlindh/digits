@@ -248,6 +248,59 @@ func TestDeliverFromRedisToLocalConnection(t *testing.T) {
 	}
 }
 
+// CloseLine publishes a "close" envelope so pods holding the line's other
+// sockets close them too. Local delivery happens regardless of the bridge.
+func TestCloseLinePublishesToRedis(t *testing.T) {
+	hub := NewHub()
+	fake := newFakeRedis()
+	hub.SetRedis(fake)
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", conn)
+
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	envs := fake.publishedEnvelopes()
+	if len(envs) != 1 {
+		t.Fatalf("published %d envelopes, want 1", len(envs))
+	}
+	if envs[0].TargetType != "close" || envs[0].Target != "3140001" {
+		t.Errorf("envelope = %s/%s, want close/3140001", envs[0].TargetType, envs[0].Target)
+	}
+	if envs[0].Message == nil || envs[0].Message.Type != TypeLineRenumber || envs[0].Message.Number != "3140009" {
+		t.Errorf("envelope must carry the farewell message, got %+v", envs[0].Message)
+	}
+	if hub.ConnectionCount("3140001") != 0 {
+		t.Error("local fake conn should be unregistered too")
+	}
+}
+
+// A "close" envelope from another pod closes this pod's connections for the
+// line the same way a local CloseLine does: farewell, then sentinel.
+func TestDeliverFromRedisClosesLocalLine(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", conn)
+
+	hub.deliverFromRedis(&Envelope{
+		PodID:      "other-pod",
+		TargetType: "close",
+		Target:     "3140001",
+		Message:    &Message{Type: TypeLineRenumber, Number: "3140009"},
+	})
+
+	frames := drainSend(conn)
+	if len(frames) != 2 || frames[1] != nil {
+		t.Fatalf("got %d frames, want farewell then nil sentinel", len(frames))
+	}
+	msg, err := ParseMessage(frames[0])
+	if err != nil || msg.Type != TypeLineRenumber || msg.Number != "3140009" {
+		t.Errorf("farewell = %+v (err %v), want line_renumber 3140009", msg, err)
+	}
+	if hub.ConnectionCount("3140001") != 0 {
+		t.Error("fake conn should be unregistered")
+	}
+}
+
 func TestDeliverFromRedisSkipsMissingTarget(t *testing.T) {
 	hub := NewHub()
 	// No connection for "3140099"; should not panic.

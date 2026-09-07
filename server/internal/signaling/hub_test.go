@@ -372,18 +372,92 @@ func TestUnregisterClearsVoicemailUnheardForHandset(t *testing.T) {
 	}
 }
 
-func TestRekeyNumberMovesVoicemailUnheard(t *testing.T) {
-	hub := NewHub()
-	hub.SetVoicemailUnheard("3140001", "hw-a", 3)
-	hub.SetVoicemailUnheard("3140001", "hw-b", 4)
-
-	hub.RekeyNumber("3140001", "3140002")
-
-	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
-		t.Errorf("old number should have 0 after rekey, got %d", got)
+// drainSend reads everything buffered on conn.Send (the channel may already
+// be closed) and returns the raw frames in order.
+func drainSend(conn *Conn) [][]byte {
+	var out [][]byte
+	for {
+		select {
+		case data, ok := <-conn.Send:
+			if !ok {
+				return out
+			}
+			out = append(out, data)
+		default:
+			return out
+		}
 	}
-	if got := hub.LineVoicemailUnheard("3140002"); got != 7 {
-		t.Errorf("new number should have summed counts, got %d, want 7", got)
+}
+
+// CloseLine queues the farewell frame and then the close sentinel on every
+// connection under the number, in that order, and leaves other lines alone.
+// Connections without a WebSocket have no read loop to unwind, so they are
+// unregistered on the spot along with their per-handset state.
+func TestCloseLineQueuesFarewellThenSentinel(t *testing.T) {
+	hub := NewHub()
+	a := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	b := &Conn{HardwareID: "hw-b", Send: make(chan []byte, 8)}
+	other := &Conn{HardwareID: "hw-c", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", a)
+	_ = hub.Register("3140001", b)
+	_ = hub.Register("3140002", other)
+	hub.SetVoicemailUnheard("3140001", "hw-a", 3)
+
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	for _, conn := range []*Conn{a, b} {
+		frames := drainSend(conn)
+		if len(frames) != 2 {
+			t.Fatalf("%s: got %d frames, want farewell + sentinel", conn.HardwareID, len(frames))
+		}
+		msg, err := ParseMessage(frames[0])
+		if err != nil {
+			t.Fatalf("%s: parse farewell: %v", conn.HardwareID, err)
+		}
+		if msg.Type != TypeLineRenumber || msg.Number != "3140009" {
+			t.Errorf("%s: farewell = %s{%s}, want %s{3140009}", conn.HardwareID, msg.Type, msg.Number, TypeLineRenumber)
+		}
+		if frames[1] != nil {
+			t.Errorf("%s: second frame should be the nil close sentinel", conn.HardwareID)
+		}
+	}
+	if hub.ConnectionCount("3140001") != 0 {
+		t.Errorf("fake conns should be unregistered, got %d", hub.ConnectionCount("3140001"))
+	}
+	if hub.LineVoicemailUnheard("3140001") != 0 {
+		t.Error("unheard count should be dropped with the unregistered handset")
+	}
+	if hub.ConnectionCount("3140002") != 1 || len(drainSend(other)) != 0 {
+		t.Error("other line must be untouched")
+	}
+}
+
+// A connection whose buffer cannot take the sentinel still gets closed:
+// CloseLine falls back to a hard socket close so the read loop unwinds.
+// There is no socket here, so the observable outcome is that the sentinel
+// is absent and the conn is gone from the hub.
+func TestCloseLineFullBufferStillUnregisters(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140001", conn)
+	conn.Send <- []byte("queued")
+
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	if hub.ConnectionCount("3140001") != 0 {
+		t.Fatal("conn should be unregistered despite the full buffer")
+	}
+	frames := drainSend(conn)
+	if len(frames) != 1 || string(frames[0]) != "queued" {
+		t.Errorf("full buffer should hold only the pre-existing frame, got %d frames", len(frames))
+	}
+}
+
+func TestCloseLineNoConnectionsIsNoop(t *testing.T) {
+	hub := NewHub()
+	hub.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+	if hub.ConnectionCount("3140001") != 0 {
+		t.Fatal("nothing should be registered")
 	}
 }
 

@@ -607,17 +607,37 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The busy check above and the update are not atomic: a call can start
+	// on the old number in between, and the socket close below would drop
+	// it. Now that the update is committed the old number is no longer a
+	// line, so call authorization refuses anything new on it; if a call is
+	// already in flight, hand the number back and refuse the change.
+	if h.tracker != nil && h.tracker.Busy(ctx, oldNumber) {
+		if err := h.lineStore.Update(ctx, ln.ID, oldNumber, ln.Name); err != nil {
+			slog.ErrorContext(ctx, "line number revert after busy recheck failed", "err", err, "line_id", ln.ID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
+		return
+	}
+
 	if h.tracker != nil {
 		if err := h.tracker.RenameNumber(ctx, oldNumber, newNumber); err != nil {
 			slog.ErrorContext(ctx, "call history rename failed", "old", oldNumber, "new", newNumber, "err", err)
 		}
 	}
 
-	h.hub.RekeyNumber(oldNumber, newNumber)
-
-	if err := h.pushLineSettings(newNumber, ln.Settings); err != nil {
-		slog.WarnContext(ctx, "push line settings after number change failed", "number", newNumber, "err", err)
-	}
+	// A connection's number is fixed at register time, so the line's phones
+	// cannot be moved to the new number in place. Tell each one its new
+	// number (digitsd persists it and re-registers) and close the sockets
+	// registered under the old one, on every pod. The re-register lands on
+	// the new number via the device's bound line and picks up line settings
+	// through the usual register push.
+	h.hub.CloseLine(oldNumber, &signaling.Message{
+		Type:   signaling.TypeLineRenumber,
+		Number: newNumber,
+	})
 
 	http.Redirect(w, r, "/phones/"+newNumber, http.StatusSeeOther)
 }

@@ -37,7 +37,9 @@ var ErrDraining = errors.New("hub is draining")
 
 // Conn represents an active WebSocket connection from a device to the hub.
 // The Send channel is the only safe write path; all outbound messages are
-// queued here and delivered by the per-connection write pump goroutine.
+// queued here and delivered by the per-connection write pump goroutine. A nil
+// element is the close sentinel: the pump delivers everything queued before
+// it, then closes the socket (see CloseLine).
 type Conn struct {
 	WS         *websocket.Conn
 	Number     string
@@ -223,6 +225,9 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		}
 		h.mu.RUnlock()
 		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
+
+	case "close":
+		h.closeLocal(env.Target, data)
 
 	case "reconnect":
 		// env.Message is guaranteed non-nil by the early return at the top of
@@ -452,18 +457,61 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 	}
 }
 
-// RekeyNumber moves all connections and state from oldNumber to newNumber.
-// Safe to call even if oldNumber has no entries.
-func (h *Hub) RekeyNumber(oldNumber, newNumber string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if cs, ok := h.conns[oldNumber]; ok {
-		h.conns[newNumber] = cs
-		delete(h.conns, oldNumber)
+// CloseLine sends farewell to every connection on number, on this pod and
+// (via Redis) on every other pod, then closes those connections. A
+// connection's number is fixed for its lifetime: the WebSocket read loop
+// routes every inbound frame as the number captured at register time and
+// unregisters under it. So anything that changes which number a device
+// answers to must end the device's current connections and let it register
+// again under the new number; that is what the farewell tells it to do.
+//
+// Closing is asynchronous: the farewell and a nil close sentinel are queued on
+// each connection's Send channel, and the write pump acts on the sentinel
+// after delivering everything queued before it. Callers observe the line
+// empty once each read loop has unwound through Unregister.
+func (h *Hub) CloseLine(number string, farewell *Message) {
+	data, err := farewell.Marshal()
+	if err != nil {
+		slog.Error("CloseLine: marshal farewell failed", "number", number, "err", err)
+		return
 	}
-	if vm, ok := h.voicemailUnheard[oldNumber]; ok {
-		h.voicemailUnheard[newNumber] = vm
-		delete(h.voicemailUnheard, oldNumber)
+	h.closeLocal(number, data)
+
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge != nil {
+		h.publish(bridge, "close", number, farewell)
+	}
+}
+
+// closeLocal queues data followed by the nil close sentinel on every local
+// connection for number. A connection whose buffer cannot take the sentinel
+// has its socket closed outright so its read loop still unwinds. Connections
+// without a socket (tests, in-process fakes) have no read loop to run
+// Unregister, so they are unregistered here.
+func (h *Hub) closeLocal(number string, data []byte) {
+	h.mu.RLock()
+	conns := slices.Clone(h.conns[number])
+	h.mu.RUnlock()
+
+	for _, conn := range conns {
+		select {
+		case conn.Send <- data:
+		default:
+			slog.Warn("CloseLine: send buffer full, farewell dropped",
+				"number", number, "hardware_id", conn.HardwareID)
+		}
+		select {
+		case conn.Send <- nil:
+		default:
+			if conn.WS != nil {
+				_ = conn.WS.Close()
+			}
+		}
+		if conn.WS == nil {
+			h.Unregister(number, conn)
+		}
 	}
 }
 
