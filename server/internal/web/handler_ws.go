@@ -260,13 +260,12 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// closeQueuedConn finishes a Hub.CloseLine on the write pump's goroutine: it
-// sends a close frame and then waits for the read loop to unwind, which
-// happens when the device answers the close handshake and Unregister closes
-// conn.Send. Closing the socket outright here could reset the connection
-// before the device has read the frames queued ahead of the sentinel. If the
-// device never answers, the pump's deferred ws.Close forces the socket shut
-// once the wait expires.
+// closeQueuedConn acts on the close sentinel from Hub.CloseLine: it sends a
+// close frame and waits for the read loop to unwind (Unregister closes
+// conn.Send) rather than closing the socket here, which could reset the
+// connection before the device has read the frames queued ahead of the
+// sentinel. If the device never answers, the pump's deferred ws.Close forces
+// the socket shut once the wait expires.
 func closeQueuedConn(ws *websocket.Conn, conn *signaling.Conn) {
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "line closed")
 	_ = ws.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(wsWriteTimeout))
@@ -377,8 +376,13 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 	conn := &signaling.Conn{Send: make(chan []byte, 8)}
 	// Drain Send so any hub fan-out to this fake device is silently discarded
 	// instead of blocking at the channel cap during interactive dev testing.
+	// The nil close sentinel retires the fake the way a real device would go.
 	go func() {
-		for range conn.Send {
+		for data := range conn.Send {
+			if data == nil {
+				h.hub.Unregister(number, conn)
+				return
+			}
 		}
 	}()
 	if err := h.hub.Register(number, conn); err != nil {

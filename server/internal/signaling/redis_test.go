@@ -269,9 +269,7 @@ func TestCloseLinePublishesToRedis(t *testing.T) {
 	if envs[0].Message == nil || envs[0].Message.Type != TypeLineRenumber || envs[0].Message.Number != "3140009" {
 		t.Errorf("envelope must carry the farewell message, got %+v", envs[0].Message)
 	}
-	if hub.ConnectionCount("3140001") != 0 {
-		t.Error("local fake conn should be unregistered too")
-	}
+	assertFarewellThenSentinel(t, conn, "3140009")
 }
 
 // A "close" envelope from another pod closes this pod's connections for the
@@ -288,17 +286,7 @@ func TestDeliverFromRedisClosesLocalLine(t *testing.T) {
 		Message:    &Message{Type: TypeLineRenumber, Number: "3140009"},
 	})
 
-	frames := drainSend(conn)
-	if len(frames) != 2 || frames[1] != nil {
-		t.Fatalf("got %d frames, want farewell then nil sentinel", len(frames))
-	}
-	msg, err := ParseMessage(frames[0])
-	if err != nil || msg.Type != TypeLineRenumber || msg.Number != "3140009" {
-		t.Errorf("farewell = %+v (err %v), want line_renumber 3140009", msg, err)
-	}
-	if hub.ConnectionCount("3140001") != 0 {
-		t.Error("fake conn should be unregistered")
-	}
+	assertFarewellThenSentinel(t, conn, "3140009")
 }
 
 func TestDeliverFromRedisSkipsMissingTarget(t *testing.T) {

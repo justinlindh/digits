@@ -465,10 +465,10 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 // answers to must end the device's current connections and let it register
 // again under the new number; that is what the farewell tells it to do.
 //
-// Closing is asynchronous: the farewell and a nil close sentinel are queued on
-// each connection's Send channel, and the write pump acts on the sentinel
-// after delivering everything queued before it. Callers observe the line
-// empty once each read loop has unwound through Unregister.
+// Closing is asynchronous: the farewell and then the nil close sentinel are
+// queued on each connection's Send channel, and whoever drains the channel
+// closes the socket and unregisters. The line is empty once every read loop
+// has unwound.
 func (h *Hub) CloseLine(number string, farewell *Message) {
 	data, err := farewell.Marshal()
 	if err != nil {
@@ -485,17 +485,14 @@ func (h *Hub) CloseLine(number string, farewell *Message) {
 	}
 }
 
-// closeLocal queues data followed by the nil close sentinel on every local
-// connection for number. A connection whose buffer cannot take the sentinel
-// has its socket closed outright so its read loop still unwinds. Connections
-// without a socket (tests, in-process fakes) have no read loop to run
-// Unregister, so they are unregistered here.
+// closeLocal queues data then the nil close sentinel on every local
+// connection for number, under h.mu like every other send path so the
+// channel cannot be closed mid-send. A connection whose buffer cannot take
+// the sentinel has its socket closed outright so its read loop still unwinds.
 func (h *Hub) closeLocal(number string, data []byte) {
 	h.mu.RLock()
-	conns := slices.Clone(h.conns[number])
-	h.mu.RUnlock()
-
-	for _, conn := range conns {
+	defer h.mu.RUnlock()
+	for _, conn := range h.conns[number] {
 		select {
 		case conn.Send <- data:
 		default:
@@ -508,9 +505,6 @@ func (h *Hub) closeLocal(number string, data []byte) {
 			if conn.WS != nil {
 				_ = conn.WS.Close()
 			}
-		}
-		if conn.WS == nil {
-			h.Unregister(number, conn)
 		}
 	}
 }

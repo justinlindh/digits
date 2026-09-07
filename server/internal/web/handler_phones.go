@@ -573,14 +573,18 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	newNumber := line.StripNumber(r.FormValue("number"))
+	reject := func(msg string) {
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape(msg), http.StatusSeeOther)
+	}
+	const busyMsg = "cannot change number while on an active call"
 
 	if h.tracker != nil && h.tracker.Busy(r.Context(), oldNumber) {
-		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
+		reject(busyMsg)
 		return
 	}
 
 	if err := line.ValidateNumber(newNumber); err != nil {
-		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		reject(err.Error())
 		return
 	}
 
@@ -597,7 +601,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if taken {
-		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("that number is already in use"), http.StatusSeeOther)
+		reject("that number is already in use")
 		return
 	}
 
@@ -618,7 +622,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
+		reject(busyMsg)
 		return
 	}
 
@@ -628,12 +632,9 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// A connection's number is fixed at register time, so the line's phones
-	// cannot be moved to the new number in place. Tell each one its new
-	// number (digitsd persists it and re-registers) and close the sockets
-	// registered under the old one, on every pod. The re-register lands on
-	// the new number via the device's bound line and picks up line settings
-	// through the usual register push.
+	// A live connection cannot be moved to a new number (see Hub.CloseLine):
+	// close the old-number sockets everywhere and let each phone re-register
+	// under the new number, which also pushes its line settings.
 	h.hub.CloseLine(oldNumber, &signaling.Message{
 		Type:   signaling.TypeLineRenumber,
 		Number: newNumber,

@@ -19,36 +19,16 @@ import (
 )
 
 // postNumberChange submits the number-change form for oldNumber as the
-// authenticated household admin and returns the recorder.
-func postNumberChange(t *testing.T, srv *httptest.Server, cookie *http.Cookie, oldNumber, newNumber string) *http.Response {
+// authenticated household admin and returns the recorded response.
+func postNumberChange(t *testing.T, h *Handler, cookie *http.Cookie, oldNumber, newNumber string) *httptest.ResponseRecorder {
 	t.Helper()
 	form := url.Values{"number": {newNumber}}
-	req, err := http.NewRequest(http.MethodPost, srv.URL+"/phones/"+oldNumber+"/number", strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
+	req := httptest.NewRequest(http.MethodPost, "/phones/"+oldNumber+"/number", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(cookie)
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("post number change: %v", err)
-	}
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	return resp
-}
-
-// waitForCondition polls fn until it returns true or the deadline expires.
-func waitForCondition(t *testing.T, what string, fn func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if fn() {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
 }
 
 // registerPaired registers a paired device on a fresh WebSocket and waits
@@ -66,14 +46,11 @@ func registerPaired(t *testing.T, srv *httptest.Server, hub *signaling.Hub, numb
 	return ws
 }
 
-// Changing a line's number while its phone is connected must end that
-// connection's life under the old identity and let the phone come back under
-// the new one. A connection's number is fixed at register time (the WS read
-// loop routes every frame as that number and unregisters under it), so the
-// server cannot move a live socket to a new number; it has to close it and
-// let the device re-register. The regression this guards: leaving the socket
-// open and moving only the hub bucket left a ghost entry under the new number
-// after disconnect and kept routing the device's traffic as the old number.
+// Changing a line's number while its phone is connected closes the phone's
+// socket and lets it come back under the new number. The regression this
+// guards: leaving the socket open and moving only the hub bucket left a ghost
+// entry under the new number after disconnect and kept routing the device's
+// traffic as the old number.
 func TestChangePhoneNumber_ConnectedDeviceReregisters(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	srv := httptest.NewServer(h.Router())
@@ -81,34 +58,28 @@ func TestChangePhoneNumber_ConnectedDeviceReregisters(t *testing.T) {
 
 	cookie := addSessionCookie(t, authStore)
 	hwID, oldNumber, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
-	newNumber := fmt.Sprintf("98%05d", time.Now().UnixNano()%100000)
+	newNumber := nextPhone()
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", newNumber)
 	})
 
 	ws := registerPaired(t, srv, h.hub, oldNumber, hwID, token)
 
-	resp := postNumberChange(t, srv, cookie, oldNumber, newNumber)
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected 303, got %d", resp.StatusCode)
+	w := postNumberChange(t, h, cookie, oldNumber, newNumber)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", w.Code)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/phones/"+newNumber {
+	if loc := w.Header().Get("Location"); loc != "/phones/"+newNumber {
 		t.Fatalf("expected redirect to /phones/%s, got %s", newNumber, loc)
 	}
 
-	// The device is told its new number so it persists it before reconnecting.
+	// The device is told its new number so it persists it before reconnecting,
+	// then the server closes the old-identity socket.
 	msg := recvMsg(t, ws)
 	if msg.Type != signaling.TypeLineRenumber || msg.Number != newNumber {
 		t.Fatalf("expected %s{%s}, got %s{%s}", signaling.TypeLineRenumber, newNumber, msg.Type, msg.Number)
 	}
-
-	// Then the server closes the old-identity socket.
-	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
-	if _, _, err := ws.ReadMessage(); err == nil {
-		t.Fatal("expected the old socket to be closed by the server")
-	} else if strings.Contains(err.Error(), "i/o timeout") {
-		t.Fatal("old socket still open after number change")
-	}
+	drainUntilClosed(t, ws)
 
 	// No ghost under either number, and the hardware is offline until it
 	// registers again.
@@ -122,13 +93,8 @@ func TestChangePhoneNumber_ConnectedDeviceReregisters(t *testing.T) {
 	// The device comes back with the new number and the same token, is
 	// accepted without a reconcile, and is reachable under the new number.
 	ws2 := registerPaired(t, srv, h.hub, newNumber, hwID, token)
-	_ = ws2.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	if _, data, err := ws2.ReadMessage(); err == nil {
-		m, _ := signaling.ParseMessage(data)
-		if m != nil && m.Type == signaling.TypeLineRenumber {
-			t.Fatalf("re-register under the new number must not be reconciled again: got %s{%s}", m.Type, m.Number)
-		}
-	}
+	sendMarker(t, h.hub, newNumber)
+	readUntil(t, ws2, "re-registered device", signaling.TypeRingTest, signaling.TypeLineRenumber)
 	if !h.hub.IsOnline(newNumber) {
 		t.Fatal("device should be online under the new number")
 	}
@@ -149,7 +115,7 @@ func TestChangePhoneNumber_BusyLineRejected(t *testing.T) {
 
 	cookie := addSessionCookie(t, authStore)
 	hwID, oldNumber, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
-	newNumber := fmt.Sprintf("97%05d", time.Now().UnixNano()%100000)
+	newNumber := nextPhone()
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", newNumber)
 		_, _ = database.DB.Exec("DELETE FROM calls WHERE caller = $1 OR callee = $1", oldNumber)
@@ -162,19 +128,18 @@ func TestChangePhoneNumber_BusyLineRejected(t *testing.T) {
 	}
 	t.Cleanup(func() { h.tracker.ClearByNumber(context.Background(), oldNumber) })
 
-	resp := postNumberChange(t, srv, cookie, oldNumber, newNumber)
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected 303, got %d", resp.StatusCode)
+	w := postNumberChange(t, h, cookie, oldNumber, newNumber)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", w.Code)
 	}
-	if loc := resp.Header.Get("Location"); !strings.Contains(loc, "number_error=") {
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "number_error=") {
 		t.Fatalf("expected rejection redirect, got %s", loc)
 	}
 
-	// Nothing changed: the socket stays open and the line keeps its number.
-	_ = ws.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	if _, _, err := ws.ReadMessage(); err == nil || !strings.Contains(err.Error(), "i/o timeout") {
-		t.Fatalf("busy line's socket must be left alone, got err=%v", err)
-	}
+	// Nothing changed: the socket stays open (a marker sent now arrives with
+	// no farewell ahead of it) and the line keeps its number.
+	sendMarker(t, h.hub, oldNumber)
+	readUntil(t, ws, "busy line", signaling.TypeRingTest, signaling.TypeLineRenumber)
 	if !h.hub.IsOnline(oldNumber) {
 		t.Fatal("busy line must remain online under its number")
 	}
@@ -201,21 +166,22 @@ func pairDeviceInNewHousehold(t *testing.T, h *Handler, database *db.Database, a
 		t.Fatalf("%s: create household: %v", label, err)
 	}
 	t.Cleanup(func() {
-		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
-		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
 		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
 		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 		_, _ = database.DB.Exec("DELETE FROM users WHERE id = $1", user.ID)
 	})
-	code, err := h.pairingStore.GenerateCode(ctx, hardwareID)
-	if err != nil {
-		t.Fatalf("%s: generate code: %v", label, err)
-	}
-	token, _, err = h.pairingStore.ClaimDevice(ctx, code, number, label+" phone", label+" phone", hh.ID)
-	if err != nil {
-		t.Fatalf("%s: claim device under %s: %v", label, number, err)
-	}
+	token = pairDevice(t, database, h.pairingStore, hh.ID, hardwareID, number, label+" phone")
 	return hardwareID, token
+}
+
+// sendMarker sends a frame to number that the tests use purely as an
+// ordering marker: anything the hub queued for that socket earlier must
+// arrive before it.
+func sendMarker(t *testing.T, hub *signaling.Hub, number string) {
+	t.Helper()
+	if err := hub.SendTo(number, &signaling.Message{Type: signaling.TypeRingTest}); err != nil {
+		t.Fatalf("marker %s: %v", number, err)
+	}
 }
 
 // readUntil reads frames from ws until one of type want arrives, failing if
@@ -266,15 +232,15 @@ func TestChangePhoneNumber_ReusedNumberNeverReachesOldOwner(t *testing.T) {
 
 	cookie := addSessionCookie(t, authStore)
 	hwA, oldNumber, tokenA := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
-	newNumber := fmt.Sprintf("96%05d", time.Now().UnixNano()%100000)
+	newNumber := nextPhone()
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", newNumber)
 	})
 
 	wsA := registerPaired(t, srv, h.hub, oldNumber, hwA, tokenA)
-	resp := postNumberChange(t, srv, cookie, oldNumber, newNumber)
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/phones/"+newNumber {
-		t.Fatalf("renumber failed: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	w := postNumberChange(t, h, cookie, oldNumber, newNumber)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/phones/"+newNumber {
+		t.Fatalf("renumber failed: %d %s", w.Code, w.Header().Get("Location"))
 	}
 	if msg := recvMsg(t, wsA); msg.Type != signaling.TypeLineRenumber {
 		t.Fatalf("expected line_renumber, got %s", msg.Type)
@@ -307,18 +273,13 @@ func TestChangePhoneNumber_ReusedNumberNeverReachesOldOwner(t *testing.T) {
 			t.Fatalf("ring %s: %v", number, err)
 		}
 	}
-	markerTo := func(number string) {
-		if err := h.hub.SendTo(number, &signaling.Message{Type: signaling.TypeRingTest}); err != nil {
-			t.Fatalf("marker %s: %v", number, err)
-		}
-	}
 	ringTo(oldNumber)
-	markerTo(newNumber)
+	sendMarker(t, h.hub, newNumber)
 	readUntil(t, wsB, "B (claimant of the reused number)", signaling.TypeRing, signaling.TypeRingTest)
 	readUntil(t, wsA2, "A (previous owner of the reused number)", signaling.TypeRingTest, signaling.TypeRing)
 
 	ringTo(newNumber)
-	markerTo(oldNumber)
+	sendMarker(t, h.hub, oldNumber)
 	readUntil(t, wsA2, "A", signaling.TypeRing, signaling.TypeRingTest)
 	readUntil(t, wsB, "B", signaling.TypeRingTest, signaling.TypeRing)
 
@@ -342,7 +303,7 @@ func TestChangePhoneNumber_ReusedNumberNeverReachesOldOwner(t *testing.T) {
 	if n := h.hub.ConnectionCount(newNumber); n != 1 {
 		t.Fatalf("new number must hold exactly A's replacement connection, got %d", n)
 	}
-	markerTo(newNumber)
+	sendMarker(t, h.hub, newNumber)
 	readUntil(t, wsStale, "A (stale-number register)", signaling.TypeRingTest, signaling.TypeRing)
 	if n := h.hub.ConnectionCount(oldNumber); n != 1 {
 		t.Fatalf("B's bucket must be untouched by A's stale register, got %d connections", n)

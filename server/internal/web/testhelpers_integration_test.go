@@ -101,20 +101,26 @@ func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store,
 	return srv, database, deps.LineStore, deps.Tracker, authStore, deps.Hub
 }
 
+// waitForCondition polls fn until it returns true or the deadline expires.
+func waitForCondition(t *testing.T, what string, fn func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
 // waitForRegister polls hub.Get until the given number is registered or the
 // deadline expires. Needed between two test phones on different WebSockets:
 // each ws read goroutine handles its own register independently, so ws1 may
 // start sending Call before ws2's register has run.
 func waitForRegister(t *testing.T, hub *signaling.Hub, number string) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if hub.Get(number) != nil {
-			return
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s to register", number)
+	waitForCondition(t, number+" to register", func() bool { return hub.Get(number) != nil })
 }
 
 // testDeps builds a Deps populated with real stores against the provided DB,
