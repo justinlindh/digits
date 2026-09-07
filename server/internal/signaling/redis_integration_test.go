@@ -239,3 +239,74 @@ func TestRedisBridgeBroadcastCrossPod(t *testing.T) {
 		t.Fatal("timed out waiting for cross-pod broadcast")
 	}
 }
+
+// TestRedisBridgeCloseLineCrossPod verifies that CloseLine on one pod closes
+// the line's connections on another pod: the remote conn receives the
+// farewell, then the close sentinel, and is gone from that pod's hub.
+func TestRedisBridgeCloseLineCrossPod(t *testing.T) {
+	redisURL := os.Getenv("TEST_REDIS_URL")
+	if redisURL == "" {
+		t.Skip("TEST_REDIS_URL not set, skipping Redis integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	bridgeA, err := NewRedisBridge(redisURL)
+	if err != nil {
+		t.Fatalf("bridgeA: %v", err)
+	}
+	defer func() { _ = bridgeA.Close() }()
+	bridgeA.podID = "pod-a-close"
+	hubA := NewHub()
+	hubA.SetRedis(bridgeA)
+	go hubA.Run(ctx)
+
+	bridgeB, err := NewRedisBridge(redisURL)
+	if err != nil {
+		t.Fatalf("bridgeB: %v", err)
+	}
+	defer func() { _ = bridgeB.Close() }()
+	bridgeB.podID = "pod-b-close"
+	hubB := NewHub()
+	hubB.SetRedis(bridgeB)
+	go hubB.Run(ctx)
+
+	time.Sleep(200 * time.Millisecond)
+
+	// The renumbered line's phone is on pod B; a phone on another line on
+	// pod B must be untouched.
+	conn := &Conn{HardwareID: "hw-remote", Send: make(chan []byte, 10)}
+	_ = hubB.Register("3140001", conn)
+	other := &Conn{HardwareID: "hw-other", Send: make(chan []byte, 10)}
+	_ = hubB.Register("3140002", other)
+
+	// The number change is handled on pod A, which holds no socket for the line.
+	hubA.CloseLine("3140001", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	readFrame := func(what string) []byte {
+		select {
+		case data := <-conn.Send:
+			return data
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for %s on pod B", what)
+			return nil
+		}
+	}
+	msg, err := ParseMessage(readFrame("farewell"))
+	if err != nil {
+		t.Fatalf("parse farewell: %v", err)
+	}
+	if msg.Type != TypeLineRenumber || msg.Number != "3140009" {
+		t.Errorf("farewell = %s{%s}, want %s{3140009}", msg.Type, msg.Number, TypeLineRenumber)
+	}
+	if sentinel := readFrame("close sentinel"); sentinel != nil {
+		t.Errorf("second frame should be the nil close sentinel, got %s", sentinel)
+	}
+	if hubB.ConnectionCount("3140001") != 0 {
+		t.Errorf("pod B should have unregistered the line, got %d conns", hubB.ConnectionCount("3140001"))
+	}
+	if hubB.ConnectionCount("3140002") != 1 || len(other.Send) != 0 {
+		t.Error("other line on pod B must be untouched")
+	}
+}
