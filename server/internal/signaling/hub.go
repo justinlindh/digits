@@ -180,12 +180,24 @@ func (h *Hub) Run(ctx context.Context) {
 // deliverFromRedis attempts local delivery of an envelope received from
 // another pod via Redis.
 func (h *Hub) deliverFromRedis(env *Envelope) {
-	if env.Message == nil {
-		return
-	}
-	data, err := env.Message.Marshal()
+	data, err := marshalOptional(env.Message)
 	if err != nil {
 		slog.Debug("redis: marshal for local delivery failed", "err", err)
+		return
+	}
+
+	// The close types are the only ones where a nil Message is meaningful
+	// (no farewell). Everywhere else a nil payload would be queued as the
+	// close sentinel, so it is refused below.
+	switch env.TargetType {
+	case "close":
+		h.closeLocalLine(env.Target, data)
+		return
+	case "close_hardware":
+		h.closeLocalHardware(env.Target, data)
+		return
+	}
+	if data == nil {
 		return
 	}
 
@@ -226,12 +238,8 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		h.mu.RUnlock()
 		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
 
-	case "close":
-		h.closeLocal(env.Target, data)
-
 	case "reconnect":
-		// env.Message is guaranteed non-nil by the early return at the top of
-		// deliverFromRedis.
+		// env.Message is guaranteed non-nil by the nil-data return above.
 		h.mu.RLock()
 		hook := h.reconnectHook
 		h.mu.RUnlock()
@@ -457,25 +465,25 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 	}
 }
 
-// CloseLine sends farewell to every connection on number, on this pod and
-// (via Redis) on every other pod, then closes those connections. A
-// connection's number is fixed for its lifetime: the WebSocket read loop
-// routes every inbound frame as the number captured at register time and
-// unregisters under it. So anything that changes which number a device
-// answers to must end the device's current connections and let it register
-// again under the new number; that is what the farewell tells it to do.
+// CloseLine ends every connection on number, on this pod and (via Redis) on
+// every other pod, sending farewell first when it is non-nil. A connection's
+// number is fixed for its lifetime: the WebSocket read loop routes every
+// inbound frame as the number captured at register time and unregisters
+// under it. So anything that changes which number a device answers to, or
+// removes the line it answers on, must end the device's current connections
+// and let it register again; the farewell tells it what to register as.
 //
 // Closing is asynchronous: the farewell and then the nil close sentinel are
 // queued on each connection's Send channel, and whoever drains the channel
 // closes the socket and unregisters. The line is empty once every read loop
 // has unwound.
 func (h *Hub) CloseLine(number string, farewell *Message) {
-	data, err := farewell.Marshal()
+	data, err := marshalOptional(farewell)
 	if err != nil {
 		slog.Error("CloseLine: marshal farewell failed", "number", number, "err", err)
 		return
 	}
-	h.closeLocal(number, data)
+	h.closeLocalLine(number, data)
 
 	h.mu.RLock()
 	bridge := h.redis
@@ -485,26 +493,81 @@ func (h *Hub) CloseLine(number string, farewell *Message) {
 	}
 }
 
-// closeLocal queues data then the nil close sentinel on every local
-// connection for number, under h.mu like every other send path so the
-// channel cannot be closed mid-send. A connection whose buffer cannot take
-// the sentinel has its socket closed outright so its read loop still unwinds.
-func (h *Hub) closeLocal(number string, data []byte) {
+// CloseHardware ends the single connection for hardwareID, wherever it is
+// terminated, sending farewell first when it is non-nil. Like SendToHardware
+// it publishes only when the connection is not local, since a device holds
+// one connection cluster-wide.
+func (h *Hub) CloseHardware(hardwareID string, farewell *Message) {
+	data, err := marshalOptional(farewell)
+	if err != nil {
+		slog.Error("CloseHardware: marshal farewell failed", "hardware_id", hardwareID, "err", err)
+		return
+	}
+	if h.closeLocalHardware(hardwareID, data) {
+		return
+	}
+
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge != nil {
+		h.publish(bridge, "close_hardware", hardwareID, farewell)
+	}
+}
+
+// marshalOptional marshals msg, mapping a nil message to a nil payload.
+func marshalOptional(msg *Message) ([]byte, error) {
+	if msg == nil {
+		return nil, nil
+	}
+	return msg.Marshal()
+}
+
+// closeLocalLine queues farewell (when non-nil) then the close sentinel on
+// every local connection for number.
+func (h *Hub) closeLocalLine(number string, farewell []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, conn := range h.conns[number] {
+		h.closeConn(conn, farewell)
+	}
+}
+
+// closeLocalHardware queues farewell (when non-nil) then the close sentinel
+// on the local connection for hardwareID, reporting whether there was one.
+func (h *Hub) closeLocalHardware(hardwareID string, farewell []byte) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	conn := h.hwConns[hardwareID]
+	if conn == nil {
+		return false
+	}
+	h.closeConn(conn, farewell)
+	return true
+}
+
+// closeConn queues farewell (when non-nil) then the nil close sentinel on
+// conn. Must be called under h.mu like every other send path so the channel
+// cannot be closed mid-send. A dropped farewell counts as a dropped send; a
+// connection whose buffer cannot take the sentinel has its socket closed
+// outright so its read loop still unwinds.
+func (h *Hub) closeConn(conn *Conn, farewell []byte) {
+	if farewell != nil {
 		select {
-		case conn.Send <- data:
+		case conn.Send <- farewell:
 		default:
-			slog.Warn("CloseLine: send buffer full, farewell dropped",
-				"number", number, "hardware_id", conn.HardwareID)
-		}
-		select {
-		case conn.Send <- nil:
-		default:
-			if conn.WS != nil {
-				_ = conn.WS.Close()
+			slog.Warn("close: send buffer full, farewell dropped",
+				"number", conn.Number, "hardware_id", conn.HardwareID)
+			if h.dropHook != nil {
+				h.dropHook()
 			}
+		}
+	}
+	select {
+	case conn.Send <- nil:
+	default:
+		if conn.WS != nil {
+			_ = conn.WS.Close()
 		}
 	}
 }

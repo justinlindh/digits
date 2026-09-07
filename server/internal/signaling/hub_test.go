@@ -431,11 +431,35 @@ func TestCloseLineQueuesFarewellThenSentinel(t *testing.T) {
 	}
 }
 
+// assertSentinelOnly checks that conn was handed only the nil close
+// sentinel, which is what a close without a farewell queues.
+func assertSentinelOnly(t *testing.T, conn *Conn) {
+	t.Helper()
+	frames := drainSend(conn)
+	if len(frames) != 1 || frames[0] != nil {
+		t.Fatalf("%s: got %d frames, want only the nil close sentinel", conn.HardwareID, len(frames))
+	}
+}
+
+// A nil farewell closes without saying anything first: the device reconnects
+// and register tells it what it is now (line deleted means pairing_code).
+func TestCloseLineNilFarewellQueuesSentinelOnly(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", conn)
+
+	hub.CloseLine("3140001", nil)
+
+	assertSentinelOnly(t, conn)
+}
+
 // A full send buffer must not block CloseLine or disturb what is already
 // queued; the sentinel is simply absent (the socket, when there is one, is
-// closed outright instead).
+// closed outright instead) and the dropped farewell is counted as a drop.
 func TestCloseLineFullBufferDoesNotBlock(t *testing.T) {
 	hub := NewHub()
+	drops := 0
+	hub.SetDropHook(func() { drops++ })
 	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
 	_ = hub.Register("3140001", conn)
 	conn.Send <- []byte("queued")
@@ -446,6 +470,28 @@ func TestCloseLineFullBufferDoesNotBlock(t *testing.T) {
 	if len(frames) != 1 || string(frames[0]) != "queued" {
 		t.Errorf("full buffer should hold only the pre-existing frame, got %d frames", len(frames))
 	}
+	if drops != 1 {
+		t.Errorf("dropped farewell should count as a drop, got %d", drops)
+	}
+}
+
+// CloseHardware closes exactly the named device's connection and leaves the
+// other phones on the same line alone, which is what moving one handset to
+// another line needs.
+func TestCloseHardwareClosesOnlyThatConnection(t *testing.T) {
+	hub := NewHub()
+	moved := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
+	sibling := &Conn{HardwareID: "hw-b", Send: make(chan []byte, 8)}
+	_ = hub.Register("3140001", moved)
+	_ = hub.Register("3140001", sibling)
+
+	hub.CloseHardware("hw-a", &Message{Type: TypeLineRenumber, Number: "3140009"})
+
+	assertFarewellThenSentinel(t, moved, "3140009")
+	if len(drainSend(sibling)) != 0 {
+		t.Error("sibling on the same line must be untouched")
+	}
+	hub.CloseHardware("hw-zzz", nil) // unknown hardware is a no-op
 }
 
 func TestCloseLineNoConnectionsIsNoop(t *testing.T) {

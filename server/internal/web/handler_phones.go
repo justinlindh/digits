@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -578,7 +579,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 	}
 	const busyMsg = "cannot change number while on an active call"
 
-	if h.tracker != nil && h.tracker.Busy(r.Context(), oldNumber) {
+	if h.lineBusy(r.Context(), oldNumber) {
 		reject(busyMsg)
 		return
 	}
@@ -616,7 +617,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 	// it. Now that the update is committed the old number is no longer a
 	// line, so call authorization refuses anything new on it; if a call is
 	// already in flight, hand the number back and refuse the change.
-	if h.tracker != nil && h.tracker.Busy(ctx, oldNumber) {
+	if h.lineBusy(ctx, oldNumber) {
 		if err := h.lineStore.Update(ctx, ln.ID, oldNumber, ln.Name); err != nil {
 			slog.ErrorContext(ctx, "line number revert after busy recheck failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -1142,10 +1143,21 @@ func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
+// lineBusy reports whether any phone on number is in a call. Changing what a
+// connected phone answers as ends its socket, so every such change refuses
+// to proceed while the line is busy rather than drop the call.
+func (h *Handler) lineBusy(ctx context.Context, number string) bool {
+	return h.tracker != nil && h.tracker.Busy(ctx, number)
+}
+
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	ln := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
+		return
+	}
+	if h.lineBusy(r.Context(), number) {
+		http.Error(w, "cannot delete line while on an active call", http.StatusConflict)
 		return
 	}
 	if err := h.lineStore.Delete(r.Context(), ln.ID); err != nil {
@@ -1153,6 +1165,11 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to delete line", http.StatusInternalServerError)
 		return
 	}
+	// The line's devices went with it (ON DELETE CASCADE). Their sockets are
+	// still registered under the number, so close them everywhere; each
+	// phone reconnects, finds itself unpaired, and is offered a pairing code.
+	// No farewell: register is what tells the phone what it is now.
+	h.hub.CloseLine(number, nil)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -1163,6 +1180,13 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !parseForm(w, r) {
+		return
+	}
+	rejectBusy := func() {
+		http.Redirect(w, r, "/phones/"+number+"?number_error="+url.QueryEscape("cannot move a handset while its line is on an active call"), http.StatusSeeOther)
+	}
+	if h.lineBusy(r.Context(), number) {
+		rejectBusy()
 		return
 	}
 
@@ -1200,21 +1224,20 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deviceIDStr := strings.TrimSpace(r.FormValue("device_id"))
-	var deviceID int64
+	var dev *device.Device
 	if deviceIDStr != "" {
-		deviceID, err = strconv.ParseInt(deviceIDStr, 10, 64)
+		deviceID, err := strconv.ParseInt(deviceIDStr, 10, 64)
 		if err != nil {
 			http.Error(w, "invalid device", http.StatusBadRequest)
 			return
 		}
-		owned := false
-		for _, d := range devices {
-			if d.ID == deviceID {
-				owned = true
+		for i := range devices {
+			if devices[i].ID == deviceID {
+				dev = &devices[i]
 				break
 			}
 		}
-		if !owned {
+		if dev == nil {
 			http.Error(w, "device does not belong to this line", http.StatusBadRequest)
 			return
 		}
@@ -1223,15 +1246,36 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "device_id required for multi-device lines", http.StatusBadRequest)
 			return
 		}
-		deviceID = devices[0].ID
+		dev = &devices[0]
 	}
 
 	// Move the device.
-	if err := h.deviceStore.Reassign(r.Context(), deviceID, targetLineID); err != nil {
-		slog.ErrorContext(r.Context(), "move device failed", "device_id", deviceID, "target", targetLineID, "err", err)
+	if err := h.deviceStore.Reassign(r.Context(), dev.ID, targetLineID); err != nil {
+		slog.ErrorContext(r.Context(), "move device failed", "device_id", dev.ID, "target", targetLineID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	// Same non-atomic window as a number change: a call can start on the
+	// source line between the busy check and the move. Hand the handset
+	// back rather than close a socket that is carrying a call.
+	if h.lineBusy(r.Context(), number) {
+		if err := h.deviceStore.Reassign(r.Context(), dev.ID, srcLn.ID); err != nil {
+			slog.ErrorContext(r.Context(), "move device revert after busy recheck failed", "device_id", dev.ID, "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		rejectBusy()
+		return
+	}
+
+	// The handset's socket, if connected, is still registered under the
+	// source number (see Hub.CloseLine): close it and let it re-register
+	// under the target line. Its siblings on the source line stay up.
+	h.hub.CloseHardware(dev.HardwareID, &signaling.Message{
+		Type:   signaling.TypeLineRenumber,
+		Number: tgtLn.Number,
+	})
 
 	remaining, err := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
 	if err != nil {

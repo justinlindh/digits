@@ -18,7 +18,7 @@ const redisChannel = "digits:signal"
 // pods attempt local delivery.
 type Envelope struct {
 	PodID      string   `json:"pod"`
-	TargetType string   `json:"type"`   // "number", "hardware", "broadcast", "reconnect", or "close"
+	TargetType string   `json:"type"`   // "number", "hardware", "broadcast", "reconnect", "close", or "close_hardware"
 	Target     string   `json:"target"` // phone number, hardware ID, or empty for broadcast
 	Message    *Message `json:"msg"`
 }
