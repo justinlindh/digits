@@ -617,14 +617,16 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 	// it. Now that the update is committed the old number is no longer a
 	// line, so call authorization refuses anything new on it; if a call is
 	// already in flight, hand the number back and refuse the change.
+	// If the revert itself fails the change stands, so fall through and
+	// close the sockets: leaving phones answering as a number the database
+	// no longer has is worse than dropping the one call.
 	if h.lineBusy(ctx, oldNumber) {
-		if err := h.lineStore.Update(ctx, ln.ID, oldNumber, ln.Name); err != nil {
-			slog.ErrorContext(ctx, "line number revert after busy recheck failed", "err", err, "line_id", ln.ID)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+		err := h.lineStore.Update(ctx, ln.ID, oldNumber, ln.Name)
+		if err == nil {
+			reject(busyMsg)
 			return
 		}
-		reject(busyMsg)
-		return
+		slog.ErrorContext(ctx, "line number revert after busy recheck failed, closing sockets", "err", err, "line_id", ln.ID)
 	}
 
 	if h.tracker != nil {
@@ -1258,15 +1260,15 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 
 	// Same non-atomic window as a number change: a call can start on the
 	// source line between the busy check and the move. Hand the handset
-	// back rather than close a socket that is carrying a call.
+	// back rather than close a socket that is carrying a call. If the
+	// revert itself fails the move stands, so fall through and close.
 	if h.lineBusy(r.Context(), number) {
-		if err := h.deviceStore.Reassign(r.Context(), dev.ID, srcLn.ID); err != nil {
-			slog.ErrorContext(r.Context(), "move device revert after busy recheck failed", "device_id", dev.ID, "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+		err := h.deviceStore.Reassign(r.Context(), dev.ID, srcLn.ID)
+		if err == nil {
+			rejectBusy()
 			return
 		}
-		rejectBusy()
-		return
+		slog.ErrorContext(r.Context(), "move device revert after busy recheck failed, closing socket", "device_id", dev.ID, "err", err)
 	}
 
 	// The handset's socket, if connected, is still registered under the

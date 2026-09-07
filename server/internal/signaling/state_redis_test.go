@@ -104,6 +104,30 @@ func TestDeviceStateSetOfflineSkipsRecordOwnedByOtherPod(t *testing.T) {
 	}
 }
 
+// After a renumber the device re-registers, possibly on another pod, under
+// the new number before the old pod's Unregister runs. That pod owns
+// nothing any more but its line membership under the old number is stale
+// and must go, while the live record is left alone.
+func TestDeviceStateSetOfflineDropsStaleLineMembershipAfterRenumber(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "test-pod", HardwareID: "hw-abc"})
+	ds.SetOnline(ctx, "5559999", DevicePresence{PodID: "other-pod", HardwareID: "hw-abc"})
+
+	ds.SetOffline(ctx, "5551234", "hw-abc")
+
+	if ds.IsOnline(ctx, "5551234") {
+		t.Fatal("old number still online after the device moved to another number")
+	}
+	if !ds.HardwareOnlineOnLine(ctx, "5559999", "hw-abc") {
+		t.Fatal("live record on the new number was removed")
+	}
+	if !ds.IsOnline(ctx, "5559999") {
+		t.Fatal("new number went offline")
+	}
+}
+
 // A record with no recorded owner (legacy or empty pod id) is still removable.
 func TestDeviceStateSetOfflineRemovesUnownedRecord(t *testing.T) {
 	ds, _ := newTestDeviceState(t)

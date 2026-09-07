@@ -365,6 +365,20 @@ func (h *Hub) Register(number string, conn *Conn) error {
 
 	conn.Number = number
 
+	// The same hardware coming back under a different number (its line was
+	// renumbered, or it was moved) must not leave the previous connection
+	// behind: that one keeps answering as the old number until its read
+	// loop unwinds, and its late Unregister would otherwise tear down this
+	// connection's hardware entry and presence record.
+	var evictedNumber string
+	if old := h.hwConns[conn.HardwareID]; old != nil && old.Number != number {
+		if old.WS != nil {
+			_ = old.WS.Close()
+		}
+		h.removeLocked(old.Number, old)
+		evictedNumber = old.Number
+	}
+
 	// If the same hardware_id already has a connection on this number,
 	// close the old one (device reconnect).
 	existing := h.conns[number]
@@ -402,10 +416,17 @@ func (h *Hub) Register(number string, conn *Conn) error {
 	slog.Debug("hub registered", "number", number, "hardware_id", conn.HardwareID,
 		"devices_on_line", devCount)
 
+	if evictedNumber != "" {
+		slog.Info("hub evicted stale connection", "hardware_id", conn.HardwareID,
+			"old_number", evictedNumber, "number", number)
+	}
 	if d != nil {
 		d.Notify()
 	}
 	if ds != nil {
+		if evictedNumber != "" {
+			ds.SetOffline(context.Background(), evictedNumber, conn.HardwareID)
+		}
 		ds.SetOnline(context.Background(), number, DevicePresence{
 			PodID:           ds.PodID(),
 			HardwareID:      conn.HardwareID,
@@ -424,31 +445,7 @@ func (h *Hub) Register(number string, conn *Conn) error {
 // conn pointer is removed; other devices on the same line are not affected.
 func (h *Hub) Unregister(number string, conn *Conn) {
 	h.mu.Lock()
-	var changed bool
-	conns := h.conns[number]
-	for i, c := range conns {
-		if c == conn {
-			close(conn.Send)
-			h.conns[number] = append(conns[:i], conns[i+1:]...)
-			if len(h.conns[number]) == 0 {
-				delete(h.conns, number)
-			}
-			if conn.HardwareID != "" {
-				delete(h.hwConns, conn.HardwareID)
-				// Drop the per-handset voicemail count too: the next
-				// reconnect republishes it. Without this a vanished
-				// handset would inflate the line-level sum forever.
-				if perHW, ok := h.voicemailUnheard[number]; ok {
-					delete(perHW, conn.HardwareID)
-					if len(perHW) == 0 {
-						delete(h.voicemailUnheard, number)
-					}
-				}
-			}
-			changed = true
-			break
-		}
-	}
+	changed := h.removeLocked(number, conn)
 	remaining := len(h.conns[number])
 	d := h.dashEvents
 	ds := h.state
@@ -463,6 +460,36 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 			ds.SetOffline(context.Background(), number, conn.HardwareID)
 		}
 	}
+}
+
+// removeLocked takes conn out of number's bucket, closing its Send channel,
+// and reports whether it was there. Must be called under h.mu (write).
+func (h *Hub) removeLocked(number string, conn *Conn) bool {
+	conns := h.conns[number]
+	i := slices.Index(conns, conn)
+	if i < 0 {
+		return false
+	}
+	close(conn.Send)
+	h.conns[number] = append(conns[:i], conns[i+1:]...)
+	if len(h.conns[number]) == 0 {
+		delete(h.conns, number)
+	}
+	if conn.HardwareID != "" {
+		if h.hwConns[conn.HardwareID] == conn {
+			delete(h.hwConns, conn.HardwareID)
+		}
+		// Drop the per-handset voicemail count too: the next
+		// reconnect republishes it. Without this a vanished
+		// handset would inflate the line-level sum forever.
+		if perHW, ok := h.voicemailUnheard[number]; ok {
+			delete(perHW, conn.HardwareID)
+			if len(perHW) == 0 {
+				delete(h.voicemailUnheard, number)
+			}
+		}
+	}
+	return true
 }
 
 // CloseLine ends every connection on number, on this pod and (via Redis) on
@@ -549,8 +576,8 @@ func (h *Hub) closeLocalHardware(hardwareID string, farewell []byte) bool {
 // closeConn queues farewell (when non-nil) then the nil close sentinel on
 // conn. Must be called under h.mu like every other send path so the channel
 // cannot be closed mid-send. A dropped farewell counts as a dropped send; a
-// connection whose buffer cannot take the sentinel has its socket closed
-// outright so its read loop still unwinds.
+// connection whose buffer cannot take the sentinel is retried in the
+// background so whatever is queued ahead of it is still delivered.
 func (h *Hub) closeConn(conn *Conn, farewell []byte) {
 	if farewell != nil {
 		select {
@@ -566,9 +593,47 @@ func (h *Hub) closeConn(conn *Conn, farewell []byte) {
 	select {
 	case conn.Send <- nil:
 	default:
-		if conn.WS != nil {
-			_ = conn.WS.Close()
+		go h.retryClose(conn)
+	}
+}
+
+// closeRetryInterval and closeRetryTimeout bound retryClose. The timeout is
+// longer than the WebSocket write timeout so a pump that is blocked on a
+// dead peer fails its write and unwinds on its own before the socket is
+// closed under it.
+const (
+	closeRetryInterval = 10 * time.Millisecond
+	closeRetryTimeout  = 15 * time.Second
+)
+
+// retryClose keeps trying to queue the close sentinel on a connection whose
+// buffer was full. The pump either drains the buffer or fails its write and
+// unwinds within one write timeout, so the retry stops as soon as the
+// sentinel fits or the connection has unregistered; past closeRetryTimeout
+// the socket is closed outright so the read loop still unwinds.
+func (h *Hub) retryClose(conn *Conn) {
+	deadline := time.Now().Add(closeRetryTimeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(closeRetryInterval)
+		h.mu.RLock()
+		registered := slices.Contains(h.conns[conn.Number], conn)
+		queued := false
+		if registered {
+			select {
+			case conn.Send <- nil:
+				queued = true
+			default:
+			}
 		}
+		h.mu.RUnlock()
+		if !registered || queued {
+			return
+		}
+	}
+	slog.Warn("close: send buffer still full, closing socket",
+		"number", conn.Number, "hardware_id", conn.HardwareID)
+	if conn.WS != nil {
+		_ = conn.WS.Close()
 	}
 }
 

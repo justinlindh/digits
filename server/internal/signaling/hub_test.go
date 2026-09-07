@@ -2,6 +2,7 @@ package signaling
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -472,6 +473,85 @@ func TestCloseLineFullBufferDoesNotBlock(t *testing.T) {
 	}
 	if drops != 1 {
 		t.Errorf("dropped farewell should count as a drop, got %d", drops)
+	}
+
+	// Once the pump has made room, the sentinel still arrives.
+	select {
+	case data, ok := <-conn.Send:
+		if !ok || data != nil {
+			t.Fatalf("expected the nil close sentinel after draining, got ok=%v data=%q", ok, data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("close sentinel never queued after the buffer drained")
+	}
+}
+
+// A retry that outlives its connection must stop instead of sending on the
+// channel Unregister closed; the failure mode is a panic on that channel
+// while the retry is still ticking.
+func TestRetryCloseStopsAfterUnregister(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140001", conn)
+	conn.Send <- []byte("queued")
+
+	hub.CloseLine("3140001", nil)
+	hub.Unregister("3140001", conn)
+	if frames := drainSend(conn); len(frames) != 1 {
+		t.Fatalf("expected only the queued frame before the close, got %d", len(frames))
+	}
+
+	time.Sleep(10 * closeRetryInterval)
+}
+
+// A phone told its line changed comes back under the new number while its
+// old-number socket may still be unwinding. Register must evict that stale
+// connection so it stops answering as the old number, and the stale read
+// loop's late Unregister must not tear down the live registration.
+func TestRegisterSameHardwareUnderNewNumberEvictsOld(t *testing.T) {
+	hub := NewHub()
+	ds, _ := newTestDeviceState(t)
+	hub.SetDeviceState(ds)
+	ctx := context.Background()
+
+	oldConn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140001", oldConn)
+	hub.SetVoicemailUnheard("3140001", "hw-a", 2)
+
+	newConn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 1)}
+	_ = hub.Register("3140002", newConn)
+
+	if hub.Get("3140001") != nil {
+		t.Fatal("stale old-number connection still registered")
+	}
+	if _, ok := <-oldConn.Send; ok {
+		t.Fatal("evicted connection's Send channel should be closed")
+	}
+	if hub.LineVoicemailUnheard("3140001") != 0 {
+		t.Error("evicted connection's voicemail count survived")
+	}
+	if ds.IsOnline(ctx, "3140001") {
+		t.Error("old number still online in presence after eviction")
+	}
+	if !ds.HardwareOnlineOnLine(ctx, "3140002", "hw-a") {
+		t.Fatal("presence should show the hardware on the new number")
+	}
+
+	// The old read loop unwinds after the new registration.
+	hub.Unregister("3140001", oldConn)
+
+	if hub.Get("3140002") != newConn {
+		t.Fatal("live connection lost after stale Unregister")
+	}
+	if !hub.IsHardwareOnline("hw-a") || !ds.HardwareOnlineOnLine(ctx, "3140002", "hw-a") {
+		t.Fatal("stale Unregister tore down the live hardware presence")
+	}
+	select {
+	case _, ok := <-newConn.Send:
+		if !ok {
+			t.Fatal("live connection's Send channel was closed by the stale Unregister")
+		}
+	default:
 	}
 }
 

@@ -86,12 +86,19 @@ func (s *DeviceState) SetOnline(ctx context.Context, number string, p DevicePres
 // rewritten with the new pod_id before the old pod's Unregister runs
 // SetOffline; an unconditional delete here would erase the live record and
 // make the device look offline cluster-wide until its next SetOnline.
+//
+// When another pod owns the record but under a different number (the device
+// re-registered after a renumber or move), this pod's line membership is
+// still stale and is dropped without touching the record.
 var setOfflineScript = redis.NewScript(`
 local pod = redis.call('HGET', KEYS[1], 'pod_id')
 if pod == false or pod == '' or pod == ARGV[1] then
 	redis.call('DEL', KEYS[1])
 	redis.call('SREM', KEYS[2], ARGV[2])
 	return 1
+end
+if redis.call('HGET', KEYS[1], 'number') ~= ARGV[3] then
+	redis.call('SREM', KEYS[2], ARGV[2])
 end
 return 0`)
 
@@ -102,7 +109,7 @@ func (s *DeviceState) SetOffline(ctx context.Context, number, hardwareID string)
 	devKey := deviceKeyPrefix + hardwareID
 	setKey := lineDevicesPrefix + number
 
-	if err := setOfflineScript.Run(ctx, s.client, []string{devKey, setKey}, s.podID, hardwareID).Err(); err != nil {
+	if err := setOfflineScript.Run(ctx, s.client, []string{devKey, setKey}, s.podID, hardwareID, number).Err(); err != nil {
 		slog.ErrorContext(ctx, "redis: SetOffline failed", "number", number, "hardware_id", hardwareID, "err", err)
 	}
 }
