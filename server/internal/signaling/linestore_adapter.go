@@ -47,10 +47,25 @@ func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number str
 	return LineSettingsFromLine(settings), nil
 }
 
+func (a *lineStoreAdapter) EffectiveLineSettingsForLine(ctx context.Context, number string, lineID int64) (*LineSettings, error) {
+	if lineID == 0 {
+		return a.EffectiveLineSettings(ctx, number)
+	}
+	settings, err := a.inner.EffectiveSettingsForLine(ctx, number, lineID)
+	if err != nil {
+		return nil, err
+	}
+	return LineSettingsFromLine(settings), nil
+}
+
 func (a *lineStoreAdapter) LineIdentifiers(ctx context.Context, number string) (int64, string, error) {
 	l, err := a.inner.GetByNumber(ctx, number)
 	if err != nil {
 		return 0, "", err
 	}
 	return l.ID, l.HouseholdID, nil
+}
+
+func (a *lineStoreAdapter) WithRenumberReadFence(ctx context.Context, fn func(context.Context) error) error {
+	return a.inner.WithRenumberReadFence(ctx, fn)
 }

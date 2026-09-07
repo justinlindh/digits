@@ -372,21 +372,6 @@ func TestUnregisterClearsVoicemailUnheardForHandset(t *testing.T) {
 	}
 }
 
-func TestRekeyNumberMovesVoicemailUnheard(t *testing.T) {
-	hub := NewHub()
-	hub.SetVoicemailUnheard("3140001", "hw-a", 3)
-	hub.SetVoicemailUnheard("3140001", "hw-b", 4)
-
-	hub.RekeyNumber("3140001", "3140002")
-
-	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
-		t.Errorf("old number should have 0 after rekey, got %d", got)
-	}
-	if got := hub.LineVoicemailUnheard("3140002"); got != 7 {
-		t.Errorf("new number should have summed counts, got %d, want 7", got)
-	}
-}
-
 // TestSendToWithTimeoutDeliversWhenBufferHasRoom verifies that
 // SendToWithTimeout successfully enqueues a message when the channel has
 // capacity.

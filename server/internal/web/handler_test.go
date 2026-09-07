@@ -1858,6 +1858,12 @@ func TestDashboard_DoesNotRenderLANIP(t *testing.T) {
 
 func TestChangePhoneNumber(t *testing.T) {
 	h, database, authStore := setupHandler(t)
+	if _, err := database.DB.Exec(`UPDATE renumber_control SET enabled = TRUE WHERE singleton`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec(`DELETE FROM renumber_control; INSERT INTO renumber_control (singleton, enabled, identity_cutover) VALUES (TRUE, FALSE, FALSE)`)
+	})
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	lineStore := line.NewStore(database.DB)
 

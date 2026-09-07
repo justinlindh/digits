@@ -172,6 +172,16 @@ func (s *Store) GetByNumber(ctx context.Context, number string) (*Line, error) {
 // the signaling layer to push settings on device registration and by the
 // quiet-hours scheduler on window transitions.
 func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (Settings, error) {
+	return s.effectiveSettings(ctx, `WHERE l.number = $1`, "number "+number, number)
+}
+
+// EffectiveSettingsForLine returns effective settings only when number still
+// belongs to the caller-known immutable line ID.
+func (s *Store) EffectiveSettingsForLine(ctx context.Context, number string, lineID int64) (Settings, error) {
+	return s.effectiveSettings(ctx, `WHERE l.number = $1 AND l.id = $2`, fmt.Sprintf("line %d at number %s", lineID, number), number, lineID)
+}
+
+func (s *Store) effectiveSettings(ctx context.Context, where, label string, args ...any) (Settings, error) {
 	var (
 		settingsRaw []byte
 		timezone    string
@@ -180,14 +190,14 @@ func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (S
 		`SELECT l.settings, h.timezone
 		   FROM lines l
 		   JOIN households h ON h.id = l.household_id
-		  WHERE l.number = $1`,
-		number,
+		  `+where,
+		args...,
 	).Scan(&settingsRaw, &timezone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Settings{}, ErrNotFound
 	}
 	if err != nil {
-		return Settings{}, fmt.Errorf("effective settings by number %s: %w", number, err)
+		return Settings{}, fmt.Errorf("effective settings for %s: %w", label, err)
 	}
 	settings, err := scanSettings(settingsRaw)
 	if err != nil {
@@ -282,6 +292,23 @@ func (s *Store) Update(ctx context.Context, id int64, number, name string) error
 	n, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("update line: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateName changes only the line label. Number changes use the renumber
+// transaction so a stale edit form cannot revert a concurrent renumber.
+func (s *Store) UpdateName(ctx context.Context, id int64, name string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE lines SET name = $1, updated_at = NOW() WHERE id = $2`, name, id)
+	if err != nil {
+		return fmt.Errorf("update line name: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update line name: %w", err)
 	}
 	if n == 0 {
 		return ErrNotFound
@@ -385,4 +412,29 @@ func (s *Store) AllSilentByHousehold(ctx context.Context, householdID string) (b
 		return false, fmt.Errorf("all silent by household: %w", err)
 	}
 	return total > 0 && total == silentCount, nil
+}
+
+// WithRenumberReadFence serializes identity-bound socket work against line
+// number changes for the entire callback, not only its validation query.
+func (s *Store) WithRenumberReadFence(ctx context.Context, fn func(context.Context) error) error {
+	return dbutil.WithRenumberReadFence(ctx, s.db, fn)
+}
+
+// LegacyIdentityAllowed reports whether the irreversible identity cutover has
+// not yet happened. Refreezing number writes never re-authorizes legacy state.
+func (s *Store) LegacyIdentityAllowed(ctx context.Context) (bool, error) {
+	var allowed bool
+	if err := s.db.QueryRowContext(ctx, `SELECT NOT identity_cutover FROM renumber_control WHERE singleton`).Scan(&allowed); err != nil {
+		return false, fmt.Errorf("read renumber identity cutover: %w", err)
+	}
+	return allowed, nil
+}
+
+// RenumberEnabled reports the durable rollout gate state.
+func (s *Store) RenumberEnabled(ctx context.Context) (bool, error) {
+	var enabled bool
+	if err := s.db.QueryRowContext(ctx, `SELECT enabled FROM renumber_control WHERE singleton`).Scan(&enabled); err != nil {
+		return false, fmt.Errorf("read renumber gate: %w", err)
+	}
+	return enabled, nil
 }

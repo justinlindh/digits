@@ -2,6 +2,7 @@ package signaling
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -36,6 +37,7 @@ const (
 // call lifecycle events and query in-flight call state.
 type CallTracker interface {
 	OnCallInitiated(ctx context.Context, from, to string) (int64, error)
+	OnCallInitiatedBound(ctx context.Context, from, to string, fromLineID, toLineID int64) (int64, error)
 	OnCallAnswered(ctx context.Context, caller, callee string) error
 	OnCallEnded(ctx context.Context, caller, callee string) error
 	ClearByNumber(ctx context.Context, number string)
@@ -93,8 +95,10 @@ type activeExtension struct {
 // pendingCallReturn tracks a *69 busy-retry request: the requester wants to
 // be notified when target becomes free so it can ring back automatically.
 type pendingCallReturn struct {
-	Target    string
-	ExpiresAt time.Time
+	Target          string
+	RequesterLineID int64
+	TargetLineID    int64
+	ExpiresAt       time.Time
 }
 
 // Relay routes signaling messages between connected devices. It sits above the
@@ -197,6 +201,18 @@ func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStor
 }
 
 func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
+	r.HandleMessageFromLine(ctx, from, 0, msg)
+}
+
+// HandleMessageFromLine carries the immutable authenticated line identity from
+// the WebSocket registration into call creation.
+func (r *Relay) HandleMessageFromLine(ctx context.Context, from string, fromLineID int64, msg *Message) {
+	r.HandleMessageFromBinding(ctx, from, fromLineID, "", msg)
+}
+
+// HandleMessageFromBinding carries both durable line identity and the exact
+// socket generation into dispatch.
+func (r *Relay) HandleMessageFromBinding(ctx context.Context, from string, fromLineID int64, connectionID string, msg *Message) {
 	msg.From = from
 
 	ctx, span := relayTracer.Start(ctx, "relay."+string(msg.Type),
@@ -213,7 +229,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 
 	switch msg.Type {
 	case TypeCall:
-		r.handleCall(ctx, from, msg)
+		r.handleCall(ctx, from, fromLineID, msg)
 	case TypeSDP, TypeICE:
 		r.handleSignalingForward(ctx, from, msg)
 	case TypeICERestart:
@@ -233,14 +249,20 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeDeviceInfo:
 		// msg.HardwareID is always set: the WS handler stamps it from
 		// conn.HardwareID and rejects registrations without a hardware_id.
-		updated := r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, DeviceInfoParams{
+		var updated bool
+		params := DeviceInfoParams{
 			PiVersion:       msg.PiVersion,
 			PiCommit:        msg.PiCommit,
 			FirmwareVersion: msg.FirmwareVersion,
 			FirmwareCommit:  msg.FirmwareCommit,
 			RemoteAddr:      msg.LocalAddr,
 			DevMode:         msg.DevMode,
-		})
+		}
+		if connectionID == "" {
+			updated = r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, params)
+		} else {
+			updated = r.Hub.UpdateDeviceInfoByConnection(msg.HardwareID, connectionID, params)
+		}
 		if updated {
 			slog.InfoContext(ctx, "device_info", "number", from,
 				"hardware_id", msg.HardwareID,
@@ -269,7 +291,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		r.handleCallReturn(ctx, from)
 		return
 	case TypeCallReturnRetry:
-		r.handleCallReturnRetry(ctx, from, msg)
+		r.handleCallReturnRetry(ctx, from, fromLineID, msg)
 		return
 	case TypeCallReturnCancel:
 		r.handleCallReturnCancel(ctx, from)
@@ -284,14 +306,14 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		}
 		slog.InfoContext(ctx, "voicemail_state", "number", from,
 			"hardware_id", msg.HardwareID, "unheard_count", msg.VoicemailUnheardCount)
-		r.Hub.SetVoicemailUnheard(from, msg.HardwareID, msg.VoicemailUnheardCount)
+		r.Hub.SetVoicemailUnheardForLine(from, fromLineID, msg.HardwareID, msg.VoicemailUnheardCount)
 		return
 	default:
 		slog.WarnContext(ctx, "unknown message type", "type", msg.Type, "from", from)
 	}
 }
 
-func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
+func (r *Relay) handleCall(ctx context.Context, from string, fromLineID int64, msg *Message) {
 	if !r.Hub.IsOnline(msg.To) {
 		// During the grace window a line's WebSocket is offline but its call
 		// is still tracked (Busy == true). Return busy instead of
@@ -307,6 +329,24 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 		// connect. It must not count toward signaling_errors_total.
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return
+	}
+
+	// Capture both stable line identities before authorization. The call insert
+	// revalidates this exact pair under the renumber advisory locks, closing the
+	// authorization-to-start race including old-number reuse.
+	var toLineID int64
+	if fromLineID != 0 {
+		if r.LineStore == nil {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "not_authorized"})
+			return
+		}
+		resolvedFromID, _, fromErr := r.LineStore.LineIdentifiers(ctx, from)
+		resolvedToID, _, toErr := r.LineStore.LineIdentifiers(ctx, msg.To)
+		if fromErr != nil || toErr != nil || resolvedFromID != fromLineID {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "line_changed"})
+			return
+		}
+		toLineID = resolvedToID
 	}
 
 	// Enforce call authorization
@@ -335,7 +375,17 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		callID, err := r.Tracker.OnCallInitiated(ctx, from, msg.To)
+		var callID int64
+		var err error
+		if fromLineID != 0 {
+			callID, err = r.Tracker.OnCallInitiatedBound(ctx, from, msg.To, fromLineID, toLineID)
+		} else {
+			callID, err = r.Tracker.OnCallInitiated(ctx, from, msg.To)
+		}
+		if errors.Is(err, calls.ErrLineChanged) {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "line_changed"})
+			return
+		}
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to track call initiation", "err", err)
 			r.observeError("call_setup_failed")
@@ -762,10 +812,23 @@ func (r *Relay) OnConnClosed(ctx context.Context, conn *Conn) {
 	if conn == nil {
 		return
 	}
-	if !r.Hub.ConnIsCurrent(conn) {
+	cleanup := func(fencedCtx context.Context) error {
+		if !r.Hub.ConnIsCurrent(conn) || !r.Hub.ConnBindingCurrent(conn) {
+			return nil
+		}
+		r.OnDisconnectBound(fencedCtx, conn.Number, conn.HardwareID, conn.LineID)
+		return nil
+	}
+	if conn.LineID == 0 {
+		_ = cleanup(ctx)
 		return
 	}
-	r.OnDisconnect(ctx, conn.Number, conn.HardwareID)
+	if r.LineStore == nil {
+		return
+	}
+	if err := r.LineStore.WithRenumberReadFence(ctx, cleanup); err != nil {
+		slog.WarnContext(ctx, "disconnect: renumber fence failed", "number", conn.Number, "err", err)
+	}
 }
 
 // OnDisconnect cleans up any active calls or conference membership for a
@@ -774,6 +837,10 @@ func (r *Relay) OnConnClosed(ctx context.Context, conn *Conn) {
 // runs before Unregister (LIFO defer order in handler_ws.go), so the
 // departing conn is still counted; >1 means siblings remain.
 func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID string) {
+	r.OnDisconnectBound(ctx, number, hardwareID, 0)
+}
+
+func (r *Relay) OnDisconnectBound(ctx context.Context, number string, hardwareID string, lineID int64) {
 	// Clear any extension state for this specific device, regardless of
 	// whether other devices remain on the line.
 	if hardwareID != "" {
@@ -797,7 +864,7 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID stri
 	// Active 2-party call: hold it open through a reconnect grace window
 	// instead of tearing down immediately. The peer is NOT notified yet.
 	if peer := r.Tracker.PeerOf(ctx, number); peer != "" {
-		r.startGraceTimer(number, hardwareID, peer)
+		r.startGraceTimerBound(number, hardwareID, peer, lineID, r.Tracker.CallIDForPair(ctx, number, peer))
 		return
 	}
 	// Not in a call: nothing to hold; clear (no-op for an idle line).
@@ -986,6 +1053,14 @@ func (r *Relay) clearExtensionsForCall(ctx context.Context, lineNumber string) {
 // window (cancelGraceLocal), the call survives. Otherwise the call is torn
 // down and `peer` receives an explicit hangup.
 func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
+	callID := int64(0)
+	if r.Tracker != nil {
+		callID = r.Tracker.CallIDForPair(context.Background(), number, peer)
+	}
+	r.startGraceTimerBound(number, hardwareID, peer, 0, callID)
+}
+
+func (r *Relay) startGraceTimerBound(number, hardwareID, peer string, lineID, callID int64) {
 	key := graceKey(number, hardwareID)
 	r.graceMu.Lock()
 	if old, ok := r.graceTimers[key]; ok {
@@ -1003,14 +1078,40 @@ func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
 		r.graceMu.Unlock()
 
 		ctx := context.Background()
-		// Fire-time recheck: a reconnect can race the timer arm and find no
-		// timer to cancel (see OnConnClosed); hub state is authoritative.
-		if r.Hub.HardwareOnlineOnLine(number, hardwareID) {
-			slog.InfoContext(ctx, "grace: device online again at expiry, keeping call", "number", number, "peer", peer)
+		expire := func(fencedCtx context.Context) error {
+			// Fire-time recheck: a reconnect can race the timer arm and find no
+			// timer to cancel. The stable call ID prevents a later call on a
+			// reused number from being torn down by this callback.
+			if r.Hub.HardwareOnlineOnLine(number, hardwareID) {
+				slog.InfoContext(fencedCtx, "grace: device online again at expiry, keeping call", "number", number, "peer", peer)
+				return nil
+			}
+			if callID != 0 && r.Tracker.CallIDForPair(fencedCtx, number, peer) != callID {
+				return nil
+			}
+			if lineID != 0 {
+				currentLineID, _, err := r.LineStore.LineIdentifiers(fencedCtx, number)
+				if err != nil {
+					return fmt.Errorf("validate grace line identity: %w", err)
+				}
+				if currentLineID != lineID || callID == 0 {
+					return nil
+				}
+			}
+			slog.InfoContext(fencedCtx, "grace: window expired, tearing down call", "number", number, "peer", peer)
+			r.endActiveCallsAsHangup(fencedCtx, number)
+			return nil
+		}
+		if lineID == 0 {
+			_ = expire(ctx)
 			return
 		}
-		slog.InfoContext(ctx, "grace: window expired, tearing down call", "number", number, "peer", peer)
-		r.endActiveCallsAsHangup(ctx, number)
+		if r.LineStore == nil {
+			return
+		}
+		if err := r.LineStore.WithRenumberReadFence(ctx, expire); err != nil {
+			slog.WarnContext(ctx, "grace: identity validation failed", "number", number, "err", err)
+		}
 	})
 	r.graceTimers[key] = entry
 	r.graceMu.Unlock()
@@ -1082,15 +1183,28 @@ func (r *Relay) handleCallReturn(ctx context.Context, from string) {
 	_ = r.Hub.SendTo(from, &Message{Type: TypeCallReturnResult, Number: number})
 }
 
-func (r *Relay) handleCallReturnRetry(ctx context.Context, from string, msg *Message) {
+func (r *Relay) handleCallReturnRetry(ctx context.Context, from string, fromLineID int64, msg *Message) {
 	target := msg.Number
 	if target == "" {
 		return
 	}
+	var targetLineID int64
+	if fromLineID != 0 {
+		if r.LineStore == nil {
+			return
+		}
+		var err error
+		targetLineID, _, err = r.LineStore.LineIdentifiers(ctx, target)
+		if err != nil {
+			return
+		}
+	}
 	r.pendingReturnsMu.Lock()
 	r.pendingReturns[from] = &pendingCallReturn{
-		Target:    target,
-		ExpiresAt: time.Now().Add(callReturnExpiry),
+		Target:          target,
+		RequesterLineID: fromLineID,
+		TargetLineID:    targetLineID,
+		ExpiresAt:       time.Now().Add(callReturnExpiry),
 	}
 	r.pendingReturnsMu.Unlock()
 	slog.InfoContext(ctx, "call_return: retry registered", "requester", from, "target", target)
@@ -1121,21 +1235,55 @@ func (r *Relay) checkPendingReturn(ctx context.Context, requester string) {
 		return
 	}
 	target := pending.Target
+	requesterLineID := pending.RequesterLineID
+	targetLineID := pending.TargetLineID
 	r.pendingReturnsMu.Unlock()
 
-	if r.Tracker != nil && !r.Tracker.Busy(ctx, target) && !r.Tracker.Busy(ctx, requester) &&
-		r.Hub.IsOnline(requester) && r.Hub.IsOnline(target) {
+	check := func(fencedCtx context.Context) error {
+		if requesterLineID != 0 {
+			currentRequesterID, _, requesterErr := r.LineStore.LineIdentifiers(fencedCtx, requester)
+			if requesterErr != nil {
+				return fmt.Errorf("validate pending requester identity: %w", requesterErr)
+			}
+			currentTargetID, _, targetErr := r.LineStore.LineIdentifiers(fencedCtx, target)
+			if targetErr != nil {
+				return fmt.Errorf("validate pending target identity: %w", targetErr)
+			}
+			if currentRequesterID != requesterLineID || currentTargetID != targetLineID {
+				r.pendingReturnsMu.Lock()
+				delete(r.pendingReturns, requester)
+				r.pendingReturnsMu.Unlock()
+				return nil
+			}
+		}
+		if r.Tracker != nil && !r.Tracker.Busy(fencedCtx, target) && !r.Tracker.Busy(fencedCtx, requester) &&
+			r.Hub.IsOnline(requester) && r.Hub.IsOnline(target) {
+			r.pendingReturnsMu.Lock()
+			_, stillPending := r.pendingReturns[requester]
+			if stillPending {
+				delete(r.pendingReturns, requester)
+			}
+			r.pendingReturnsMu.Unlock()
+			if !stillPending {
+				return nil
+			}
+			slog.InfoContext(fencedCtx, "call_return: target free, ringing requester", "requester", requester, "target", target)
+			_ = r.Hub.SendTo(requester, &Message{Type: TypeCallReturnRing, Number: target})
+		}
+		return nil
+	}
+	if requesterLineID == 0 {
+		_ = check(ctx)
+		return
+	}
+	if r.LineStore == nil {
 		r.pendingReturnsMu.Lock()
-		_, stillPending := r.pendingReturns[requester]
-		if stillPending {
-			delete(r.pendingReturns, requester)
-		}
+		delete(r.pendingReturns, requester)
 		r.pendingReturnsMu.Unlock()
-		if !stillPending {
-			return
-		}
-		slog.InfoContext(ctx, "call_return: target free, ringing requester", "requester", requester, "target", target)
-		_ = r.Hub.SendTo(requester, &Message{Type: TypeCallReturnRing, Number: target})
+		return
+	}
+	if err := r.LineStore.WithRenumberReadFence(ctx, check); err != nil {
+		slog.WarnContext(ctx, "call_return: identity validation failed", "requester", requester, "err", err)
 	}
 }
 

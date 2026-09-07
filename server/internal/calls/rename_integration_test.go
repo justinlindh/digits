@@ -10,15 +10,12 @@ import (
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
-// TestRenameNumber_Integration verifies that RenameNumber rewrites a phone
-// number across every table its transaction touches: calls.caller,
-// calls.callee, conferences.host_phone, conference_members.phone, and
-// conference_kicks.kicked_phone. A missed table or a wrong column would
-// silently strand call history under the old number, so each one is asserted
-// explicitly.
-func TestRenameNumber_Integration(t *testing.T) {
+// TestRenumberLineRewritesHistoryIntegration verifies that RenumberLine rewrites a phone
+// number across every table its transaction touches.
+func TestRenumberLineRewritesHistoryIntegration(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d.DB)
+	setRenumberEnabled(t, d, true)
 	ctx := context.Background()
 
 	const (
@@ -27,16 +24,26 @@ func TestRenameNumber_Integration(t *testing.T) {
 		peer   = "+15557770002"
 	)
 
+	var householdID string
+	if err := d.DB.QueryRow(`INSERT INTO households (name) VALUES ('rename history') RETURNING id`).Scan(&householdID); err != nil {
+		t.Fatalf("seed household: %v", err)
+	}
+	var lineID int64
+	if err := d.DB.QueryRow(`INSERT INTO lines (number, name, household_id) VALUES ($1, 'history', $2) RETURNING id`, oldNum, householdID).Scan(&lineID); err != nil {
+		t.Fatalf("seed line: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.DB.Exec(`DELETE FROM households WHERE id = $1`, householdID) })
+
 	// calls.caller = old (outbound leg) and calls.callee = old (inbound leg).
 	var outboundID, inboundID int64
 	if err := d.DB.QueryRow(
-		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'ended') RETURNING id`,
 		oldNum, peer,
 	).Scan(&outboundID); err != nil {
 		t.Fatalf("seed outbound call: %v", err)
 	}
 	if err := d.DB.QueryRow(
-		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'ended') RETURNING id`,
 		peer, oldNum,
 	).Scan(&inboundID); err != nil {
 		t.Fatalf("seed inbound call: %v", err)
@@ -45,7 +52,7 @@ func TestRenameNumber_Integration(t *testing.T) {
 	// conferences.host_phone = old.
 	confID := uuid.New()
 	if _, err := d.DB.Exec(
-		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'ended')`,
 		confID, oldNum, outboundID,
 	); err != nil {
 		t.Fatalf("seed conference: %v", err)
@@ -53,7 +60,7 @@ func TestRenameNumber_Integration(t *testing.T) {
 
 	// conference_members.phone = old.
 	if _, err := d.DB.Exec(
-		`INSERT INTO conference_members (conference_id, phone, role) VALUES ($1, $2, 'host')`,
+		`INSERT INTO conference_members (conference_id, phone, role, left_at) VALUES ($1, $2, 'host', NOW())`,
 		confID, oldNum,
 	); err != nil {
 		t.Fatalf("seed member: %v", err)
@@ -75,8 +82,8 @@ func TestRenameNumber_Integration(t *testing.T) {
 		t.Fatalf("seed kick: %v", err)
 	}
 
-	if err := tr.RenameNumber(ctx, oldNum, newNum); err != nil {
-		t.Fatalf("RenameNumber: %v", err)
+	if err := tr.RenumberLine(ctx, lineID, oldNum, newNum, "history"); err != nil {
+		t.Fatalf("RenumberLine: %v", err)
 	}
 
 	// Assert against the specific rows this test seeded (by id / conference id)

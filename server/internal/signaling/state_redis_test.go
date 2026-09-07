@@ -60,7 +60,7 @@ func TestDeviceStateIsHardwareOnline(t *testing.T) {
 	}
 
 	// One device going offline does not affect its sibling, even cross-pod.
-	ds.SetOffline(ctx, "5551234", "hw-abc")
+	ds.SetOffline(ctx, "5551234", "hw-abc", "")
 	if ds.IsHardwareOnline(ctx, "hw-abc") {
 		t.Fatal("hw-abc should be offline after SetOffline")
 	}
@@ -78,7 +78,7 @@ func TestDeviceStateSetOffline(t *testing.T) {
 		HardwareID: "hw-abc",
 	})
 
-	ds.SetOffline(ctx, "hw-5551234", "hw-abc")
+	ds.SetOffline(ctx, "hw-5551234", "hw-abc", "")
 
 	if ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("expected device to be offline after SetOffline")
@@ -94,7 +94,7 @@ func TestDeviceStateSetOfflineSkipsRecordOwnedByOtherPod(t *testing.T) {
 
 	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "other-pod", HardwareID: "hw-abc"})
 
-	ds.SetOffline(ctx, "5551234", "hw-abc")
+	ds.SetOffline(ctx, "5551234", "hw-abc", "")
 
 	if !ds.IsHardwareOnline(ctx, "hw-abc") {
 		t.Fatal("presence owned by another pod was deleted by SetOffline")
@@ -111,7 +111,7 @@ func TestDeviceStateSetOfflineRemovesUnownedRecord(t *testing.T) {
 
 	ds.SetOnline(ctx, "5551234", DevicePresence{HardwareID: "hw-abc"})
 
-	ds.SetOffline(ctx, "5551234", "hw-abc")
+	ds.SetOffline(ctx, "5551234", "hw-abc", "")
 
 	if ds.IsHardwareOnline(ctx, "hw-abc") {
 		t.Fatal("unowned presence record should be removed by SetOffline")
@@ -135,7 +135,7 @@ func TestDeviceStateHardwareOnlineOnLine(t *testing.T) {
 		t.Fatal("device must not count as online on a line it is not registered on")
 	}
 
-	ds.SetOffline(ctx, "5551234", "hw-abc")
+	ds.SetOffline(ctx, "5551234", "hw-abc", "")
 	if ds.HardwareOnlineOnLine(ctx, "5551234", "hw-abc") {
 		t.Fatal("expected offline after SetOffline")
 	}
@@ -216,11 +216,12 @@ func TestDeviceStateUpdateDeviceInfo(t *testing.T) {
 	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:           "pod-1",
 		HardwareID:      "hw-abc",
+		ConnectionID:    "conn-abc",
 		PiVersion:       "1.0.0",
 		FirmwareVersion: "0.5.0",
 	})
 
-	ds.UpdateDeviceInfo(ctx, "hw-abc", DevicePresence{
+	ds.UpdateDeviceInfo(ctx, "hw-abc", "conn-abc", DevicePresence{
 		PiVersion:  "1.1.0",
 		RemoteAddr: "192.168.1.50",
 	})
@@ -246,13 +247,14 @@ func TestDeviceStateTouchLastSeen(t *testing.T) {
 	ctx := context.Background()
 
 	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
-		PodID:      "pod-1",
-		HardwareID: "hw-abc",
+		PodID:        "pod-1",
+		HardwareID:   "hw-abc",
+		ConnectionID: "conn-abc",
 	})
 
 	mr.FastForward(60 * time.Second)
 
-	ds.TouchLastSeen(ctx, "hw-5551234", "hw-abc")
+	ds.TouchLastSeen(ctx, "hw-5551234", "hw-abc", "conn-abc")
 
 	ts := ds.LastSeenAt(ctx, "hw-5551234")
 	if ts == nil {
@@ -364,7 +366,7 @@ func TestDeviceStateSetOfflineRemovesOneDevice(t *testing.T) {
 		PodID: "test-pod", HardwareID: "hw-bbb", PiVersion: "1.2.0",
 	})
 
-	ds.SetOffline(ctx, "hw-5551234", "hw-aaa")
+	ds.SetOffline(ctx, "hw-5551234", "hw-aaa", "")
 
 	if !ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("line should still be online with one remaining device")
@@ -389,8 +391,63 @@ func TestDeviceStateEmptyHardwareIDSkipped(t *testing.T) {
 		t.Fatal("device with empty hardware ID should not register in Redis")
 	}
 
-	ds.SetOffline(ctx, "hw-5551234", "")
+	ds.SetOffline(ctx, "hw-5551234", "", "")
 
-	ds.TouchLastSeen(ctx, "hw-5551234", "")
-	ds.UpdateDeviceInfo(ctx, "", DevicePresence{PiVersion: "1.0.0"})
+	ds.TouchLastSeen(ctx, "hw-5551234", "", "")
+	ds.UpdateDeviceInfo(ctx, "", "", DevicePresence{PiVersion: "1.0.0"})
+}
+
+func TestDeviceStateOldSamePodDisconnectCannotEraseReplacement(t *testing.T) {
+	ctx := context.Background()
+	ds, _ := newTestDeviceState(t)
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-a", HardwareID: "hw-abc", ConnectionID: "old"})
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-a", HardwareID: "hw-abc", ConnectionID: "new"})
+	ds.SetOffline(ctx, "5551234", "hw-abc", "old")
+	if !ds.HardwareOnlineOnLine(ctx, "5551234", "hw-abc") {
+		t.Fatal("old same-pod disconnect erased replacement presence")
+	}
+}
+
+func TestDeviceStateCrossNumberReconnectRemovesOldMembership(t *testing.T) {
+	ctx := context.Background()
+	ds, _ := newTestDeviceState(t)
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-a", HardwareID: "hw-abc", ConnectionID: "old"})
+	ds.SetOnline(ctx, "5555678", DevicePresence{PodID: "pod-b", HardwareID: "hw-abc", ConnectionID: "new"})
+	if ds.IsOnline(ctx, "5551234") {
+		t.Fatal("cross-number reconnect left old line membership")
+	}
+	if !ds.IsOnline(ctx, "5555678") {
+		t.Fatal("cross-number reconnect did not create new line membership")
+	}
+}
+
+func TestDeviceStateOlderClaimCannotOverwriteNewPresence(t *testing.T) {
+	ctx := context.Background()
+	ds, _ := newTestDeviceState(t)
+	oldGeneration, err := ds.ClaimGeneration(ctx, "hw-generation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newGeneration, err := ds.ClaimGeneration(ctx, "hw-generation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.SetOnline(ctx, "5550002", DevicePresence{PodID: "pod-new", HardwareID: "hw-generation", ConnectionID: "new", PresenceGeneration: newGeneration})
+	ds.SetOffline(ctx, "5550002", "hw-generation", "new")
+	ds.SetOnline(ctx, "5550001", DevicePresence{PodID: "pod-old", HardwareID: "hw-generation", ConnectionID: "old", PresenceGeneration: oldGeneration})
+	if ds.HardwareOnlineOnLine(ctx, "5550001", "hw-generation") {
+		t.Fatal("older registration claim recreated old-number membership")
+	}
+}
+
+func TestDeviceStateZeroLineIDUsesLegacyIdentityPolicy(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+	ds.SetOnline(ctx, "5550042", DevicePresence{PodID: "pod", HardwareID: "legacy-zero", ConnectionID: "conn", LineID: 0})
+	if !ds.LineIdentityOnline(ctx, "5550042", 42, true) {
+		t.Fatal("zero line ID presence was not treated as legacy before cutover")
+	}
+	if ds.LineIdentityOnline(ctx, "5550042", 42, false) {
+		t.Fatal("zero line ID presence remained eligible after cutover")
+	}
 }

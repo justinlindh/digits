@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -150,12 +152,6 @@ func (h *Handler) buildLineRows(r *http.Request, hh *household.Household) (rows 
 		lines = []line.Line{}
 	}
 
-	online := h.hub.OnlineNumbers()
-	onlineSet := make(map[string]bool, len(online))
-	for _, n := range online {
-		onlineSet[n] = true
-	}
-
 	var (
 		idx                *updates.ReleaseIndex
 		latestPi, latestFw string
@@ -183,14 +179,14 @@ func (h *Handler) buildLineRows(r *http.Request, hh *household.Household) (rows 
 
 	rows = make([]lineRow, len(lines))
 	for i, l := range lines {
-		infos := h.hub.AllDeviceInfo(l.Number)
+		infos := h.hub.AllDeviceInfoForLine(l.Number, l.ID)
 		var info *signaling.DeviceInfoSnapshot
 		if len(infos) > 0 {
 			info = &infos[0]
 		}
-		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
-		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
-		row.VoicemailUnheard = h.hub.LineVoicemailUnheard(l.Number)
+		row := lineRow{Line: l, Online: h.hub.IsOnlineForLine(l.Number, l.ID), DeviceInfo: info}
+		row.OnlineDeviceCount = h.hub.ConnectionCountForLine(l.Number, l.ID)
+		row.VoicemailUnheard = h.hub.LineVoicemailUnheardForLine(l.Number, l.ID)
 		row.Devices = devicesByLine[l.ID]
 		row.PiUpdateNotes, row.FirmwareUpdateNotes = updateNotes(idx, infos, latestPi, latestFw)
 		rows[i] = row
@@ -343,7 +339,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	allInfos := h.hub.AllDeviceInfo(number)
+	allInfos := h.hub.AllDeviceInfoForLine(number, ln.ID)
 	views, selected := h.buildDeviceViews(devices, allInfos)
 
 	// The operator panel renders the selected device through the same builder
@@ -404,7 +400,7 @@ func (h *Handler) buildOperatorData(ln *line.Line, hh *household.Household, isAd
 	online := h.hub.IsHardwareOnline(hardwareID)
 	if hardwareID == "" && len(allInfos) > 0 {
 		devInfo = &allInfos[0]
-		online = h.hub.IsOnline(ln.Number)
+		online = h.hub.IsOnlineForLine(ln.Number, ln.ID)
 	}
 
 	// Last-seen is sourced from this device's own row, not the line-level hub
@@ -415,7 +411,7 @@ func (h *Handler) buildOperatorData(ln *line.Line, hh *household.Household, isAd
 	// has no per-device row, so it uses the line-level last-seen.
 	var lastSeenAt *time.Time
 	if hardwareID == "" {
-		lastSeenAt = h.hub.LastSeenAt(ln.Number)
+		lastSeenAt = h.hub.LastSeenAtForLine(ln.Number, ln.ID)
 	} else {
 		for _, d := range devices {
 			if d.HardwareID == hardwareID {
@@ -464,7 +460,7 @@ func (h *Handler) handlePhoneOperator(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	allInfos := h.hub.AllDeviceInfo(number)
+	allInfos := h.hub.AllDeviceInfoForLine(number, ln.ID)
 	data := h.buildOperatorData(ln, hh, role == roleAdmin, hwID, devices, allInfos)
 	data.chromeData = h.newChromeDataWithHouseholds(r, "phones")
 	renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "operator-panel", "am-operator-panel"), data)
@@ -493,7 +489,7 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 		}
 		online = h.hub.IsHardwareOnline(validHW)
 	} else {
-		online = h.hub.IsOnline(number)
+		online = h.hub.IsOnlineForLine(number, ln.ID)
 	}
 	if isHTMX(r) {
 		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
@@ -549,7 +545,7 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if name != ln.Name {
-		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
+		if err := h.lineStore.UpdateName(r.Context(), ln.ID, name); err != nil {
 			slog.ErrorContext(r.Context(), "line update failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -601,23 +597,32 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.lineStore.Update(ctx, ln.ID, newNumber, ln.Name); err != nil {
+	if h.tracker == nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.tracker.RenumberLine(ctx, ln.ID, oldNumber, newNumber, ln.Name); err != nil {
+		if errors.Is(err, calls.ErrLineBusy) {
+			http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
+			return
+		}
+		if errors.Is(err, calls.ErrLineChanged) {
+			http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("line number changed; reload and try again"), http.StatusSeeOther)
+			return
+		}
+		if errors.Is(err, calls.ErrRenumberDisabled) {
+			http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("phone number changes are temporarily unavailable"), http.StatusSeeOther)
+			return
+		}
 		slog.ErrorContext(ctx, "line number update failed", "err", err, "line_id", ln.ID)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	if h.tracker != nil {
-		if err := h.tracker.RenameNumber(ctx, oldNumber, newNumber); err != nil {
-			slog.ErrorContext(ctx, "call history rename failed", "old", oldNumber, "new", newNumber, "err", err)
-		}
-	}
-
-	h.hub.RekeyNumber(oldNumber, newNumber)
-
-	if err := h.pushLineSettings(newNumber, ln.Settings); err != nil {
-		slog.WarnContext(ctx, "push line settings after number change failed", "number", newNumber, "err", err)
-	}
+	// Keep each socket's registration identity immutable. The daemon persists
+	// this control message and restarts, then handler_ws reconciles its new
+	// connection against the committed device binding.
+	h.hub.RenumberLine(ln.ID)
 
 	http.Redirect(w, r, "/phones/"+newNumber, http.StatusSeeOther)
 }
@@ -803,29 +808,34 @@ func (h *Handler) applyLineSettings(w http.ResponseWriter, r *http.Request, ln *
 	if next == ln.Settings {
 		return true
 	}
-	if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
+	err := h.lineStore.WithRenumberReadFence(r.Context(), func(fencedCtx context.Context) error {
+		if err := h.lineStore.UpdateSettings(fencedCtx, ln.ID, next); err != nil {
+			return err
+		}
+		effective, err := h.lineStore.EffectiveSettingsForLine(fencedCtx, ln.Number, ln.ID)
+		if err != nil {
+			slog.WarnContext(fencedCtx, "fetch effective settings failed, pushing raw settings", "number", ln.Number, "line_id", ln.ID, "err", err)
+			effective = next
+		}
+		if err := h.pushLineSettings(ln.Number, ln.ID, effective); err != nil {
+			slog.WarnContext(fencedCtx, "push line settings failed", "number", ln.Number, "line_id", ln.ID, "err", err)
+		}
+		return nil
+	})
+	if err != nil {
 		slog.ErrorContext(r.Context(), "update line settings failed", "err", err, "line_id", ln.ID)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return false
-	}
-	effective, err := h.lineStore.EffectiveSettingsByNumber(r.Context(), ln.Number)
-	if err != nil {
-		slog.WarnContext(r.Context(), "fetch effective settings failed, pushing raw settings", "number", ln.Number, "err", err)
-		effective = next
-	}
-	if err := h.pushLineSettings(ln.Number, effective); err != nil {
-		slog.WarnContext(r.Context(), "push line settings failed", "number", ln.Number, "err", err)
 	}
 	ln.Settings = next
 	return true
 }
 
-// pushLineSettings sends the updated settings to the device currently
-// registered as the given number, if any. A missing device is not an error;
-// the next time that device reconnects it will receive the latest effective
-// settings via the registration push in relay.OnRegistered.
-func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
-	err := h.hub.SendTo(number, &signaling.Message{
+// pushLineSettings sends updated settings only to devices belonging to the
+// caller-known line identity. A missing device is not an error; registration
+// reconciliation sends the latest effective settings when it reconnects.
+func (h *Handler) pushLineSettings(number string, lineID int64, settings line.Settings) error {
+	err := h.hub.SendToLine(number, lineID, &signaling.Message{
 		Type:         signaling.TypeLineSettings,
 		To:           number,
 		LineSettings: signaling.LineSettingsFromLine(settings),
@@ -837,7 +847,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 }
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
-	number, hwID, ok := h.requireDeviceCommand(w, r, true)
+	ln, hwID, ok := h.requireDeviceCommand(w, r, true)
 	if !ok {
 		return
 	}
@@ -851,7 +861,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 		TargetPiVersion: targetPi,
 		TargetFWVersion: targetFW,
 	}
-	h.sendDeviceCommandAndRespond(w, r, number, hwID, msg, "update trigger", "target_pi", targetPi, "target_fw", targetFW)
+	h.sendDeviceCommandAndRespond(w, r, ln, hwID, msg, "update trigger", "target_pi", targetPi, "target_fw", targetFW)
 }
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
@@ -872,18 +882,18 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
-	number, hwID, ok := h.requireDeviceCommand(w, r, false)
+	ln, hwID, ok := h.requireDeviceCommand(w, r, false)
 	if !ok {
 		return
 	}
 	msg := &signaling.Message{
 		Type: signaling.TypeRingTest,
 	}
-	h.sendDeviceCommandAndRespond(w, r, number, hwID, msg, "ring test")
+	h.sendDeviceCommandAndRespond(w, r, ln, hwID, msg, "ring test")
 }
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
-	number, hwID, ok := h.requireDeviceCommand(w, r, true)
+	ln, hwID, ok := h.requireDeviceCommand(w, r, true)
 	if !ok {
 		return
 	}
@@ -892,7 +902,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 	msg := &signaling.Message{
 		Type: signaling.TypeFactoryReset,
 	}
-	h.sendDeviceCommandAndRespond(w, r, number, hwID, msg, "factory reset")
+	h.sendDeviceCommandAndRespond(w, r, ln, hwID, msg, "factory reset")
 }
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
@@ -919,7 +929,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 		Type:        signaling.TypeRestart,
 		RestartMode: mode,
 	}
-	h.sendDeviceCommandAndRespond(w, r, number, hwID, msg, "restart command", "mode", mode)
+	h.sendDeviceCommandAndRespond(w, r, ln, hwID, msg, "restart command", "mode", mode)
 }
 
 // devModePasswordMin and devModePasswordMax bound the SSH login password set
@@ -982,7 +992,7 @@ func (h *Handler) handlePhoneDevMode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h.sendDeviceCommandAndRespond(w, r, number, hwID, msg, "dev mode command", "enabled", enabled)
+	h.sendDeviceCommandAndRespond(w, r, ln, hwID, msg, "dev mode command", "enabled", enabled)
 }
 
 // handlePhoneDevModeStatus reports the device's current developer-mode state so
@@ -990,14 +1000,14 @@ func (h *Handler) handlePhoneDevMode(w http.ResponseWriter, r *http.Request) {
 // boolean and the fixed SSH username; the LAN IP is rendered in owner-scope
 // HTML on page reload, never in JSON (see DeviceInfoSnapshot.RemoteAddr).
 func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Request) {
-	number, hwID, ok := h.requireDeviceCommand(w, r, false)
+	ln, hwID, ok := h.requireDeviceCommand(w, r, false)
 	if !ok {
 		return
 	}
 	// hwID is "" only in requireLineDevice's no-device-rows fallback; there it
 	// means "no specific device to match", so fall back to a line-level scan.
 	enabled := false
-	for _, info := range h.hub.AllDeviceInfo(number) {
+	for _, info := range h.hub.AllDeviceInfoForLine(ln.Number, ln.ID) {
 		if (hwID == "" || info.HardwareID == hwID) && info.DevMode {
 			enabled = true
 			break
@@ -1007,7 +1017,7 @@ func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Reques
 		"enabled":  enabled,
 		"ssh_user": "dev",
 	}); err != nil {
-		slog.ErrorContext(r.Context(), "dev mode status: json encode failed", "number", number, "err", err)
+		slog.ErrorContext(r.Context(), "dev mode status: json encode failed", "number", ln.Number, "err", err)
 	}
 }
 
@@ -1017,25 +1027,24 @@ func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Reques
 // any failure it has already written the response and returns ok=false, so the
 // caller returns immediately. Handlers that must validate a form field before
 // the device lookup (to preserve error precedence) inline these steps instead.
-func (h *Handler) requireDeviceCommand(w http.ResponseWriter, r *http.Request, adminOnly bool) (number, hardwareID string, ok bool) {
-	number = r.PathValue("number")
-	var ln *line.Line
+func (h *Handler) requireDeviceCommand(w http.ResponseWriter, r *http.Request, adminOnly bool) (ln *line.Line, hardwareID string, ok bool) {
+	number := r.PathValue("number")
 	if adminOnly {
 		ln = h.requireLineOwnershipAdmin(w, r, number)
 	} else {
 		ln = h.requireLineOwnership(w, r, number)
 	}
 	if ln == nil {
-		return "", "", false
+		return nil, "", false
 	}
 	if !parseForm(w, r) {
-		return "", "", false
+		return nil, "", false
 	}
 	hardwareID, _, ok = h.requireLineDevice(w, r, ln)
 	if !ok {
-		return "", "", false
+		return nil, "", false
 	}
-	return number, hardwareID, true
+	return ln, hardwareID, true
 }
 
 // requireLineDevice resolves the hardware_id param to a device on this line and
@@ -1084,13 +1093,16 @@ func (h *Handler) requireLineDevice(w http.ResponseWriter, r *http.Request, ln *
 // logs the outcome, and writes the standard phone-command response. When
 // hardwareID is empty (no device rows; legacy connection) it falls back to
 // line-level SendTo so single-device lines without DB rows still work.
-func (h *Handler) sendDeviceCommandAndRespond(w http.ResponseWriter, r *http.Request, number, hardwareID string, msg *signaling.Message, opName string, extraInfo ...any) {
+func (h *Handler) sendDeviceCommandAndRespond(w http.ResponseWriter, r *http.Request, ln *line.Line, hardwareID string, msg *signaling.Message, opName string, extraInfo ...any) {
+	number := ln.Number
 	var sendErr string
 	var err error
 	if hardwareID != "" {
 		err = h.hub.SendToHardware(hardwareID, msg)
 	} else {
-		err = h.hub.SendTo(number, msg)
+		err = h.lineStore.WithRenumberReadFence(r.Context(), func(context.Context) error {
+			return h.hub.SendToLine(number, ln.ID, msg)
+		})
 	}
 	if err != nil {
 		slog.WarnContext(r.Context(), opName+" failed", append([]any{"number", number, "hardware_id", hardwareID, "err", err}, extraInfo...)...)

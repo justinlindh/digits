@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,6 +24,12 @@ const CallStatusEnded = "ended"
 // role strings written to the conference_members table. Must match the DB
 // CHECK constraint defined in db.go and the wire constants in
 // server/internal/signaling (signaling imports calls, so we can't share directly).
+var (
+	ErrLineBusy         = errors.New("line has an active call")
+	ErrLineChanged      = errors.New("line number changed")
+	ErrRenumberDisabled = errors.New("line renumbering is disabled")
+)
+
 const (
 	roleHost  = "host"
 	roleAdded = "added"
@@ -157,13 +164,54 @@ func sortedPair(a, b string) (string, string) {
 	return a, b
 }
 
+func lockPhoneNumbers(ctx context.Context, tx *sql.Tx, numbers ...string) error {
+	slices.Sort(numbers)
+	for _, number := range slices.Compact(numbers) {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, number); err != nil {
+			return fmt.Errorf("lock phone number %s: %w", number, err)
+		}
+	}
+	return nil
+}
+
 func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, error) {
+	return t.onCallInitiated(ctx, from, to, 0, 0)
+}
+
+// OnCallInitiatedBound creates a call only if both numbers still belong to the
+// stable line identities authorized by the WebSocket request. Validation runs
+// after taking the same advisory locks as renumbering.
+func (t *Tracker) OnCallInitiatedBound(ctx context.Context, from, to string, fromLineID, toLineID int64) (int64, error) {
+	return t.onCallInitiated(ctx, from, to, fromLineID, toLineID)
+}
+
+func (t *Tracker) onCallInitiated(ctx context.Context, from, to string, fromLineID, toLineID int64) (int64, error) {
 	var id int64
-	if err := t.db.QueryRowContext(ctx,
-		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id",
-		from, to,
-	).Scan(&id); err != nil {
-		return 0, fmt.Errorf("insert call: %w", err)
+	if err := dbutil.WithTx(ctx, t.db, func(tx *sql.Tx) error {
+		if err := lockPhoneNumbers(ctx, tx, from, to); err != nil {
+			return err
+		}
+		if fromLineID != 0 || toLineID != 0 {
+			var valid bool
+			if err := tx.QueryRowContext(ctx, `SELECT
+				EXISTS (SELECT 1 FROM lines WHERE id = $1 AND number = $2) AND
+				EXISTS (SELECT 1 FROM lines WHERE id = $3 AND number = $4)`,
+				fromLineID, from, toLineID, to).Scan(&valid); err != nil {
+				return fmt.Errorf("validate call line identities: %w", err)
+			}
+			if !valid {
+				return ErrLineChanged
+			}
+		}
+		if err := tx.QueryRowContext(ctx,
+			"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id",
+			from, to,
+		).Scan(&id); err != nil {
+			return fmt.Errorf("insert call: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return 0, err
 	}
 
 	t.mu.Lock()
@@ -308,10 +356,40 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	}
 }
 
-// RenameNumber updates all call history records from oldNumber to newNumber
-// in a single transaction.
-func (t *Tracker) RenameNumber(ctx context.Context, oldNumber, newNumber string) error {
-	return dbutil.WithTx(ctx, t.db, func(tx *sql.Tx) error {
+// RenumberLine atomically rejects active calls, changes the line number, and
+// rewrites historical number references. Advisory locks are shared with call
+// creation, so a call initiation and a renumber can never both commit using
+// the old number.
+func (t *Tracker) RenumberLine(ctx context.Context, lineID int64, oldNumber, newNumber, name string) error {
+	return dbutil.WithRenumberWriteFence(ctx, t.db, func(tx *sql.Tx) error {
+		var enabled bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT enabled FROM renumber_control WHERE singleton FOR SHARE`).Scan(&enabled); err != nil {
+			return fmt.Errorf("read renumber gate: %w", err)
+		}
+		if !enabled {
+			return ErrRenumberDisabled
+		}
+		if err := lockPhoneNumbers(ctx, tx, oldNumber, newNumber); err != nil {
+			return err
+		}
+		var current string
+		if err := tx.QueryRowContext(ctx, `SELECT number FROM lines WHERE id = $1 FOR UPDATE`, lineID).Scan(&current); err != nil {
+			return fmt.Errorf("lock line: %w", err)
+		}
+		if current != oldNumber {
+			return ErrLineChanged
+		}
+		var busy bool
+		if err := tx.QueryRowContext(ctx, `SELECT
+			EXISTS (SELECT 1 FROM calls WHERE (caller = $1 OR callee = $1) AND status IN ('initiated', 'ringing', 'connected')) OR
+			EXISTS (SELECT 1 FROM conferences WHERE state = 'active' AND host_phone = $1) OR
+			EXISTS (SELECT 1 FROM conference_members m JOIN conferences c ON c.id = m.conference_id WHERE c.state = 'active' AND m.phone = $1 AND m.left_at IS NULL)`, oldNumber).Scan(&busy); err != nil {
+			return fmt.Errorf("check active calls: %w", err)
+		}
+		if busy {
+			return ErrLineBusy
+		}
 		queries := []string{
 			`UPDATE calls SET caller = $1 WHERE caller = $2`,
 			`UPDATE calls SET callee = $1 WHERE callee = $2`,
@@ -323,6 +401,16 @@ func (t *Tracker) RenameNumber(ctx context.Context, oldNumber, newNumber string)
 			if _, err := tx.ExecContext(ctx, q, newNumber, oldNumber); err != nil {
 				return fmt.Errorf("rename number in call history: %w", err)
 			}
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE lines SET number = $1, name = $2, updated_at = NOW() WHERE id = $3`, newNumber, name, lineID)
+		if err != nil {
+			return fmt.Errorf("update line: %w", err)
+		}
+		if n, err := result.RowsAffected(); err != nil || n != 1 {
+			if err != nil {
+				return fmt.Errorf("update line: %w", err)
+			}
+			return ErrLineChanged
 		}
 		return nil
 	})

@@ -39,12 +39,20 @@ func (f *fakeLineStore) EffectiveLineSettings(ctx context.Context, number string
 	return &out, nil
 }
 
+func (f *fakeLineStore) EffectiveLineSettingsForLine(ctx context.Context, number string, _ int64) (*LineSettings, error) {
+	return f.EffectiveLineSettings(ctx, number)
+}
+
 func (f *fakeLineStore) LineIdentifiers(ctx context.Context, number string) (int64, string, error) {
 	id, ok := f.identifiers[number]
 	if !ok {
 		return 0, "", line.ErrNotFound
 	}
 	return id.lineID, id.householdID, nil
+}
+
+func (f *fakeLineStore) WithRenumberReadFence(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
 }
 
 // TestOnRegisteredPushesSilentMode verifies that when OnRegistered is called

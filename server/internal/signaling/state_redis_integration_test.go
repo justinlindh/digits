@@ -6,89 +6,47 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
-func TestDeviceStateIntegrationTwoPods(t *testing.T) {
-	redisURL := os.Getenv("TEST_REDIS_URL")
-	if redisURL == "" {
+func TestRedisPresenceGenerationFenceIntegration(t *testing.T) {
+	url := os.Getenv("TEST_REDIS_URL")
+	if url == "" {
 		t.Skip("TEST_REDIS_URL not set")
 	}
-
-	ctx := context.Background()
-	opts, err := redis.ParseURL(redisURL)
+	opts, err := redis.ParseURL(url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	client := redis.NewClient(opts)
-	defer func() { _ = client.Close() }()
-
-	t.Cleanup(func() {
-		for _, pattern := range []string{"digits:device:*", "digits:line-devices:test-*"} {
-			iter := client.Scan(ctx, 0, pattern, 100).Iterator()
-			for iter.Next(ctx) {
-				_ = client.Del(ctx, iter.Val())
-			}
-		}
-	})
-
-	dsA := NewDeviceState(client, "pod-a")
-	dsA.SetOnline(ctx, "test-5551234", DevicePresence{
-		HardwareID:      "hw-int-1",
-		PiVersion:       "2.0.0",
-		FirmwareVersion: "1.0.0",
-		RemoteAddr:      "192.168.1.10",
-	})
-
-	dsB := NewDeviceState(client, "pod-b")
-	if !dsB.IsOnline(ctx, "test-5551234") {
-		t.Fatal("pod B should see device as online")
-	}
-
-	all := dsB.AllDeviceInfo(ctx, "test-5551234")
-	if len(all) == 0 {
-		t.Fatal("pod B should see device info")
-	}
-	info := all[0]
-	if info.PiVersion != "2.0.0" {
-		t.Errorf("PiVersion = %q, want %q", info.PiVersion, "2.0.0")
-	}
-
-	dsA.SetOffline(ctx, "test-5551234", "hw-int-1")
-	if dsB.IsOnline(ctx, "test-5551234") {
-		t.Fatal("pod B should see device as offline after unregister")
-	}
-}
-
-func TestDeviceStateTTLExpiryIntegration(t *testing.T) {
-	redisURL := os.Getenv("TEST_REDIS_URL")
-	if redisURL == "" {
-		t.Skip("TEST_REDIS_URL not set")
-	}
-
+	t.Cleanup(func() { _ = client.Close() })
 	ctx := context.Background()
-	opts, err := redis.ParseURL(redisURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := redis.NewClient(opts)
-	defer func() { _ = client.Close() }()
-
+	hardwareID := "renumber-" + uuid.NewString()
+	oldNumber := "7651001"
+	newNumber := "7651002"
 	t.Cleanup(func() {
-		_ = client.Del(ctx, "digits:device:hw-ttl-1")
-		_ = client.Del(ctx, "digits:line-devices:test-ttl-5551234")
+		client.Del(ctx, deviceKeyPrefix+hardwareID, deviceKeyPrefix+hardwareID+":generation", lineDevicesPrefix+oldNumber, lineDevicesPrefix+newNumber)
 	})
-
-	ds := NewDeviceState(client, "pod-ttl")
-	ds.SetOnline(ctx, "test-ttl-5551234", DevicePresence{HardwareID: "hw-ttl-1"})
-
-	ttl, err := client.TTL(ctx, "digits:device:hw-ttl-1").Result()
+	ds := NewDeviceState(client, "integration-pod")
+	oldGeneration, err := ds.ClaimGeneration(ctx, hardwareID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ttl < 80*time.Second || ttl > 91*time.Second {
-		t.Errorf("TTL = %v, expected ~90s", ttl)
+	newGeneration, err := ds.ClaimGeneration(ctx, hardwareID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.SetOnline(ctx, newNumber, DevicePresence{PodID: ds.PodID(), HardwareID: hardwareID, ConnectionID: "new", PiVersion: "new", PresenceGeneration: newGeneration})
+	ds.SetOffline(ctx, newNumber, hardwareID, "new")
+	ds.SetOnline(ctx, oldNumber, DevicePresence{PodID: ds.PodID(), HardwareID: hardwareID, ConnectionID: "old", PresenceGeneration: oldGeneration})
+	ds.TouchLastSeen(ctx, oldNumber, hardwareID, "old")
+	ds.UpdateDeviceInfo(ctx, hardwareID, "old", DevicePresence{PiVersion: "stale"})
+	if ds.IsHardwareOnline(ctx, hardwareID) {
+		t.Fatal("stale generation recreated deleted Redis presence")
+	}
+	if ds.IsOnline(ctx, oldNumber) || ds.IsOnline(ctx, newNumber) {
+		t.Fatal("stale generation left line membership online")
 	}
 }

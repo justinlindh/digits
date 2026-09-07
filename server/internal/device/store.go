@@ -212,3 +212,22 @@ func (s *Store) BoundLineNumber(ctx context.Context, hardwareID string) (string,
 	}
 	return number, nil
 }
+
+// BoundLineIdentity returns the stable line ID and current number assigned to
+// a paired device. A zero ID and empty number mean no bound line.
+func (s *Store) BoundLineIdentity(ctx context.Context, hardwareID string) (int64, string, error) {
+	var id int64
+	var number string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT l.id, l.number FROM devices d
+		JOIN lines l ON l.id = d.line_id
+		WHERE d.hardware_id = $1 AND d.paired_at IS NOT NULL
+	`, hardwareID).Scan(&id, &number)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", nil
+	}
+	if err != nil {
+		return 0, "", fmt.Errorf("bound line identity: %w", err)
+	}
+	return id, number, nil
+}

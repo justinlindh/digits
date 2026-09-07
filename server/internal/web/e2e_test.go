@@ -126,7 +126,14 @@ func TestE2EFullCallFlow(t *testing.T) {
 }
 
 func TestE2ECallToOfflinePhone(t *testing.T) {
-	srv, _, _, _, _, hub := setupTestServer(t)
+	srv, database, lineStore, _, authStore, hub := setupTestServer(t)
+	hhID := seedE2EHousehold(t, database, authStore)
+	if _, err := lineStore.Add(context.Background(), "3140001", "Phone A", hhID); err != nil {
+		t.Fatalf("add line A: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+	})
 
 	ws1 := dialWS(t, srv)
 	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeRegister, Number: "3140001", HardwareID: "e2e-offline-a"})

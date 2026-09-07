@@ -499,6 +499,63 @@ END $$;`,
 		// scans as the table grows.
 		`CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller, started_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee, started_at DESC)`,
+		// v32: default-off database gate for the line renumber rollout. The
+		// trigger covers current and legacy writers while ordinary updates and
+		// call traffic remain available.
+		`CREATE TABLE IF NOT EXISTS renumber_control (
+			singleton  BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+			enabled    BOOLEAN NOT NULL DEFAULT FALSE,
+			updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			identity_cutover BOOLEAN NOT NULL DEFAULT FALSE
+		);
+		ALTER TABLE renumber_control
+			ADD COLUMN IF NOT EXISTS identity_cutover BOOLEAN NOT NULL DEFAULT FALSE;
+		INSERT INTO renumber_control (singleton, enabled)
+		VALUES (TRUE, FALSE)
+		ON CONFLICT (singleton) DO NOTHING;
+		UPDATE renumber_control SET identity_cutover = TRUE WHERE enabled;
+
+		CREATE OR REPLACE FUNCTION latch_renumber_identity_cutover()
+		RETURNS TRIGGER
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN
+			NEW.identity_cutover := OLD.identity_cutover OR NEW.identity_cutover OR NEW.enabled;
+			RETURN NEW;
+		END;
+		$$;
+		DROP TRIGGER IF EXISTS renumber_identity_cutover_latch ON renumber_control;
+		CREATE TRIGGER renumber_identity_cutover_latch
+		BEFORE UPDATE ON renumber_control
+		FOR EACH ROW EXECUTE FUNCTION latch_renumber_identity_cutover();
+
+		CREATE OR REPLACE FUNCTION enforce_renumber_enabled()
+		RETURNS TRIGGER
+		LANGUAGE plpgsql
+		AS $$
+		DECLARE
+			renumber_enabled BOOLEAN;
+		BEGIN
+			SELECT enabled INTO renumber_enabled
+			FROM renumber_control WHERE singleton FOR SHARE;
+			IF NEW.number IS DISTINCT FROM OLD.number
+				AND NOT COALESCE(renumber_enabled, FALSE) THEN
+				RAISE EXCEPTION 'line renumbering is disabled'
+					USING ERRCODE = '55000';
+			END IF;
+			RETURN NEW;
+		END;
+		$$;
+
+		DROP TRIGGER IF EXISTS lines_renumber_gate ON lines;
+		CREATE TRIGGER lines_renumber_gate
+		BEFORE UPDATE OF number ON lines
+		FOR EACH ROW EXECUTE FUNCTION enforce_renumber_enabled();
+
+		CREATE TABLE IF NOT EXISTS renumber_inflight_guards (
+			token      TEXT PRIMARY KEY,
+			started_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

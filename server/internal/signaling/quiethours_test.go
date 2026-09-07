@@ -2,6 +2,7 @@ package signaling
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -83,7 +84,7 @@ func TestQuietHoursSchedulerSkipsOffline(t *testing.T) {
 	sched.evaluate(context.Background())
 
 	sched.mu.Lock()
-	_, tracked := sched.lastSent["3140002"]
+	_, tracked := sched.lastSent[LineIdentity{Number: "3140002"}]
 	sched.mu.Unlock()
 	if tracked {
 		t.Errorf("offline line should be pruned from tracking")
@@ -141,9 +142,76 @@ func TestQuietHoursSchedulerScopedToLocalConns(t *testing.T) {
 
 	// The remote-only line is never tracked, evaluated, or pushed.
 	sched.mu.Lock()
-	_, tracked := sched.lastSent["3140007"]
+	_, tracked := sched.lastSent[LineIdentity{Number: "3140007"}]
 	sched.mu.Unlock()
 	if tracked {
 		t.Errorf("remote-only line should not be evaluated by this replica")
+	}
+}
+
+type quietHoursReuseStore struct {
+	hub       *Hub
+	oldConn   *Conn
+	newConn   *Conn
+	fenceSeen bool
+	inside    bool
+	reused    bool
+}
+
+func (s *quietHoursReuseStore) EffectiveLineSettings(context.Context, string) (*LineSettings, error) {
+	panic("number-only effective settings lookup used")
+}
+
+func (s *quietHoursReuseStore) EffectiveLineSettingsForLine(_ context.Context, number string, lineID int64) (*LineSettings, error) {
+	if !s.inside {
+		return nil, errors.New("effective settings read outside renumber fence")
+	}
+	if lineID == 1 && !s.reused {
+		s.reused = true
+		s.hub.Unregister(number, s.oldConn)
+		if err := s.hub.Register(number, s.newConn); err != nil {
+			return nil, err
+		}
+		return &LineSettings{SilentMode: true}, nil
+	}
+	if lineID == 2 {
+		return &LineSettings{SilentMode: false}, nil
+	}
+	return nil, errors.New("unexpected line identity")
+}
+
+func (s *quietHoursReuseStore) LineIdentifiers(context.Context, string) (int64, string, error) {
+	return 0, "", errors.New("not used")
+}
+
+func (s *quietHoursReuseStore) WithRenumberReadFence(ctx context.Context, fn func(context.Context) error) error {
+	s.fenceSeen = true
+	s.inside = true
+	defer func() { s.inside = false }()
+	return fn(ctx)
+}
+
+func TestQuietHoursSchedulerRetainsLocalLineIdentityAcrossReuse(t *testing.T) {
+	const number = "3140098"
+	hub := NewHub()
+	hub.SetLegacyIdentityAllowedResolver(func() (bool, error) { return false, nil })
+	oldConn := &Conn{LineID: 1, HardwareID: "old-owner", Send: make(chan []byte, 1)}
+	newConn := &Conn{LineID: 2, HardwareID: "new-owner", Send: make(chan []byte, 1)}
+	if err := hub.Register(number, oldConn); err != nil {
+		t.Fatal(err)
+	}
+	store := &quietHoursReuseStore{hub: hub, oldConn: oldConn, newConn: newConn}
+	sched := NewQuietHoursScheduler(hub, store)
+
+	sched.evaluate(context.Background())
+	if !store.fenceSeen {
+		t.Fatal("quiet-hours evaluation did not use renumber read fence")
+	}
+	expectNoMessage(t, newConn)
+
+	sched.evaluate(context.Background())
+	msg := drainOne(t, newConn.Send)
+	if msg.LineSettings == nil || msg.LineSettings.SilentMode {
+		t.Fatalf("replacement owner did not receive its own settings: %+v", msg.LineSettings)
 	}
 }

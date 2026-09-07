@@ -17,10 +17,11 @@ const redisChannel = "digits:signal"
 // channel. Each pod publishes when a local lookup misses, and subscribing
 // pods attempt local delivery.
 type Envelope struct {
-	PodID      string   `json:"pod"`
-	TargetType string   `json:"type"`   // "number", "hardware", "broadcast", or "reconnect"
-	Target     string   `json:"target"` // phone number, hardware ID, or empty for broadcast
-	Message    *Message `json:"msg"`
+	PodID        string   `json:"pod"`
+	TargetType   string   `json:"type"`   // "number", "hardware", "broadcast", or "reconnect"
+	Target       string   `json:"target"` // phone number, hardware ID, or empty for broadcast
+	TargetLineID int64    `json:"line_id,omitempty"`
+	Message      *Message `json:"msg"`
 }
 
 // redisPubSub is the interface the Hub uses for cross-pod messaging. The

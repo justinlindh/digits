@@ -6,6 +6,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"html/template"
@@ -431,6 +432,25 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			TrustedProxies: cfg.TrustedProxies,
 			Redis:          deps.RedisClient,
 			OnReject:       onReject,
+		})
+	}
+
+	if deps.Hub != nil && deps.LineStore != nil {
+		deps.Hub.SetLineResolver(func(number string) (int64, error) {
+			ln, err := deps.LineStore.GetByNumber(context.Background(), number)
+			if err != nil {
+				return 0, err
+			}
+			return ln.ID, nil
+		}, func(lineID int64) (string, error) {
+			ln, err := deps.LineStore.GetByID(context.Background(), lineID)
+			if err != nil {
+				return "", err
+			}
+			return ln.Number, nil
+		})
+		deps.Hub.SetLegacyIdentityAllowedResolver(func() (bool, error) {
+			return deps.LineStore.LegacyIdentityAllowed(context.Background())
 		})
 	}
 

@@ -346,3 +346,69 @@ func TestWSRepairUsesAuthenticatedHardwareID(t *testing.T) {
 		})
 	}
 }
+
+type blockingRegistrationSettingsStore struct {
+	effectiveEntered chan struct{}
+	releaseEffective chan struct{}
+}
+
+func (s *blockingRegistrationSettingsStore) EffectiveLineSettings(context.Context, string) (*signaling.LineSettings, error) {
+	close(s.effectiveEntered)
+	<-s.releaseEffective
+	return &signaling.LineSettings{}, nil
+}
+func (s *blockingRegistrationSettingsStore) EffectiveLineSettingsForLine(ctx context.Context, number string, _ int64) (*signaling.LineSettings, error) {
+	return s.EffectiveLineSettings(ctx, number)
+}
+func (s *blockingRegistrationSettingsStore) LineIdentifiers(context.Context, string) (int64, string, error) {
+	return 0, "", nil
+}
+func (s *blockingRegistrationSettingsStore) WithRenumberReadFence(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func TestPairedRegistrationSettingsStayInsideRenumberFence(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	store := &blockingRegistrationSettingsStore{effectiveEntered: make(chan struct{}), releaseEffective: make(chan struct{})}
+	h.relay.LineStore = store
+	if _, err := database.DB.Exec(`UPDATE renumber_control SET enabled = TRUE WHERE singleton`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec(`DELETE FROM renumber_control; INSERT INTO renumber_control (singleton, enabled, identity_cutover) VALUES (TRUE, FALSE, FALSE)`)
+	})
+	var lineID int64
+	if err := database.DB.QueryRow(`SELECT id FROM lines WHERE number = $1`, number).Scan(&lineID); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{Type: signaling.TypeRegister, Number: number, HardwareID: hwID, DeviceToken: token})
+	select {
+	case <-store.effectiveEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("registration did not begin settings read")
+	}
+	released := false
+	defer func() {
+		if !released {
+			close(store.releaseEffective)
+		}
+	}()
+	renameDone := make(chan error, 1)
+	go func() {
+		renameDone <- h.tracker.RenumberLine(context.Background(), lineID, number, number+"9", "renamed")
+	}()
+	select {
+	case err := <-renameDone:
+		t.Fatalf("renumber crossed blocked registration settings delivery: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(store.releaseEffective)
+	released = true
+	if err := <-renameDone; err != nil {
+		t.Fatal(err)
+	}
+}

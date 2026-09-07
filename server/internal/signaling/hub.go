@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"github.com/justinlindh/digits/server/internal/httputil"
@@ -39,11 +40,15 @@ var ErrDraining = errors.New("hub is draining")
 // The Send channel is the only safe write path; all outbound messages are
 // queued here and delivered by the per-connection write pump goroutine.
 type Conn struct {
-	WS         *websocket.Conn
-	Number     string
-	HardwareID string
-	Send       chan []byte
-	LastSeen   time.Time
+	WS                 *websocket.Conn
+	Number             string
+	LineID             int64
+	ConnectionID       string
+	PresenceGeneration int64
+	HardwareID         string
+	Send               chan []byte
+	LastSeen           time.Time
+	ValidateBinding    func() bool
 
 	// RemoteAddr is the device's primary LAN address as it sees itself,
 	// reported by the device in the device_info message after register.
@@ -67,12 +72,18 @@ type dashNotifier interface {
 	Notify()
 }
 
+type voicemailPresence struct {
+	LineID int64
+	Count  int
+}
+
 // Hub manages all active device WebSocket connections and routes signaling
 // messages between them. In single-instance mode it holds connections in
 // memory; in cluster mode a RedisBridge fans out to sibling pods and a
 // DeviceState tracks presence across the fleet.
 type Hub struct {
 	mu           sync.RWMutex
+	presenceMu   sync.Mutex
 	conns        map[string][]*Conn               // phone number -> connections (multiple devices per line)
 	hwConns      map[string]*Conn                 // hardware ID -> connection
 	updateStatus map[string]*UpdateStatusSnapshot // hardware id -> last update status
@@ -83,7 +94,7 @@ type Hub struct {
 	// line-level "you have N new messages" indicator is the SUM across
 	// handsets. In-memory only; digitsd republishes on every reconnect, so
 	// volatility is intentional.
-	voicemailUnheard map[string]map[string]int
+	voicemailUnheard map[string]map[string]voicemailPresence
 	dashEvents       dashNotifier
 	redis            redisPubSub  // nil = single-instance mode (no Redis)
 	state            *DeviceState // nil = single-instance mode (no cluster state)
@@ -92,7 +103,10 @@ type Hub struct {
 	// dropHook is called each time a best-effort SendTo skips a device whose
 	// send buffer is full. Optional; nil disables. Wired in cmd/signald/main.go
 	// to the metrics registry to count dropped signaling sends.
-	dropHook func()
+	dropHook                      func()
+	lineResolver                  func(number string) (int64, error)
+	lineNumberResolver            func(lineID int64) (string, error)
+	legacyIdentityAllowedResolver func() (bool, error)
 }
 
 // NewHub creates a Hub ready for use. Call SetRedis and SetDeviceState before
@@ -103,7 +117,7 @@ func NewHub() *Hub {
 		conns:            make(map[string][]*Conn),
 		hwConns:          make(map[string]*Conn),
 		updateStatus:     make(map[string]*UpdateStatusSnapshot),
-		voicemailUnheard: make(map[string]map[string]int),
+		voicemailUnheard: make(map[string]map[string]voicemailPresence),
 	}
 }
 
@@ -133,6 +147,22 @@ func (h *Hub) SetReconnectHook(fn func(number, hardwareID string)) {
 func (h *Hub) SetDropHook(fn func()) {
 	h.mu.Lock()
 	h.dropHook = fn
+	h.mu.Unlock()
+}
+
+// SetLineResolver configures the durable number-to-line identity fence used by
+// line-targeted delivery. Connections whose immutable LineID no longer owns a
+// reused number are excluded even if a reconnect control event was delayed.
+func (h *Hub) SetLineResolver(fn func(number string) (int64, error), reverse func(lineID int64) (string, error)) {
+	h.mu.Lock()
+	h.lineResolver = fn
+	h.lineNumberResolver = reverse
+	h.mu.Unlock()
+}
+
+func (h *Hub) SetLegacyIdentityAllowedResolver(fn func() (bool, error)) {
+	h.mu.Lock()
+	h.legacyIdentityAllowedResolver = fn
 	h.mu.Unlock()
 }
 
@@ -189,8 +219,29 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 
 	switch env.TargetType {
 	case "number":
+		targetLineID := env.TargetLineID
+		h.mu.RLock()
+		resolver := h.lineResolver
+		legacyResolver := h.legacyIdentityAllowedResolver
+		h.mu.RUnlock()
+		if targetLineID == 0 && legacyResolver != nil {
+			allowed, policyErr := legacyResolver()
+			if policyErr != nil || !allowed {
+				return
+			}
+		}
+		if resolver != nil {
+			currentLineID, resolveErr := resolver(env.Target)
+			if resolveErr != nil || (targetLineID != 0 && targetLineID != currentLineID) {
+				return
+			}
+			targetLineID = currentLineID
+		}
 		h.mu.RLock()
 		for _, conn := range h.conns[env.Target] {
+			if targetLineID != 0 && conn.LineID != targetLineID {
+				continue
+			}
 			select {
 			case conn.Send <- data:
 				slog.Debug("redis: delivered to local connection", "pod", env.PodID, "delivered", true)
@@ -223,6 +274,16 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		}
 		h.mu.RUnlock()
 		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
+
+	case "line_renumber":
+		h.mu.RLock()
+		resolver := h.lineNumberResolver
+		h.mu.RUnlock()
+		number := ""
+		if resolver != nil {
+			number, _ = resolver(env.TargetLineID)
+		}
+		h.deliverLineRenumber(env.TargetLineID, number)
 
 	case "reconnect":
 		// env.Message is guaranteed non-nil by the early return at the top of
@@ -344,6 +405,18 @@ func (h *Hub) SetDashboardEvents(b dashNotifier) {
 // connection with the same HardwareID is already registered on this number,
 // the old one is closed and replaced.
 func (h *Hub) Register(number string, conn *Conn) error {
+	h.presenceMu.Lock()
+	defer h.presenceMu.Unlock()
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil && conn.HardwareID != "" && conn.PresenceGeneration == 0 {
+		generation, err := ds.ClaimGeneration(context.Background(), conn.HardwareID)
+		if err != nil {
+			return fmt.Errorf("claim presence generation: %w", err)
+		}
+		conn.PresenceGeneration = generation
+	}
 	h.mu.Lock()
 	if h.draining {
 		h.mu.Unlock()
@@ -351,6 +424,35 @@ func (h *Hub) Register(number string, conn *Conn) error {
 	}
 
 	conn.Number = number
+	if conn.ConnectionID == "" {
+		conn.ConnectionID = uuid.NewString()
+	}
+
+	// A hardware ID has exactly one live socket across all line numbers. This
+	// removes a stale old-number registration before installing a reconnect on
+	// the authoritative number.
+	if old := h.hwConns[conn.HardwareID]; old != nil && old != conn && old.Number != number {
+		oldConns := h.conns[old.Number]
+		for i, candidate := range oldConns {
+			if candidate == old {
+				if old.WS != nil {
+					_ = old.WS.Close()
+				}
+				close(old.Send)
+				h.conns[old.Number] = append(oldConns[:i], oldConns[i+1:]...)
+				if len(h.conns[old.Number]) == 0 {
+					delete(h.conns, old.Number)
+				}
+				if perHW := h.voicemailUnheard[old.Number]; perHW != nil {
+					delete(perHW, old.HardwareID)
+					if len(perHW) == 0 {
+						delete(h.voicemailUnheard, old.Number)
+					}
+				}
+				break
+			}
+		}
+	}
 
 	// If the same hardware_id already has a connection on this number,
 	// close the old one (device reconnect).
@@ -383,7 +485,6 @@ func (h *Hub) Register(number string, conn *Conn) error {
 
 	devCount := len(h.conns[number])
 	d := h.dashEvents
-	ds := h.state
 	h.mu.Unlock()
 
 	slog.Debug("hub registered", "number", number, "hardware_id", conn.HardwareID,
@@ -394,14 +495,17 @@ func (h *Hub) Register(number string, conn *Conn) error {
 	}
 	if ds != nil {
 		ds.SetOnline(context.Background(), number, DevicePresence{
-			PodID:           ds.PodID(),
-			HardwareID:      conn.HardwareID,
-			PiVersion:       conn.PiVersion,
-			PiCommit:        conn.PiCommit,
-			FirmwareVersion: conn.FirmwareVersion,
-			FirmwareCommit:  conn.FirmwareCommit,
-			RemoteAddr:      conn.RemoteAddr,
-			DevMode:         conn.DevMode,
+			PodID:              ds.PodID(),
+			LineID:             conn.LineID,
+			ConnectionID:       conn.ConnectionID,
+			PresenceGeneration: conn.PresenceGeneration,
+			HardwareID:         conn.HardwareID,
+			PiVersion:          conn.PiVersion,
+			PiCommit:           conn.PiCommit,
+			FirmwareVersion:    conn.FirmwareVersion,
+			FirmwareCommit:     conn.FirmwareCommit,
+			RemoteAddr:         conn.RemoteAddr,
+			DevMode:            conn.DevMode,
 		})
 	}
 	return nil
@@ -410,6 +514,8 @@ func (h *Hub) Register(number string, conn *Conn) error {
 // Unregister removes the specific connection from the hub. Only the exact
 // conn pointer is removed; other devices on the same line are not affected.
 func (h *Hub) Unregister(number string, conn *Conn) {
+	h.presenceMu.Lock()
+	defer h.presenceMu.Unlock()
 	h.mu.Lock()
 	var changed bool
 	conns := h.conns[number]
@@ -447,56 +553,222 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 			d.Notify()
 		}
 		if ds != nil {
-			ds.SetOffline(context.Background(), number, conn.HardwareID)
+			ds.SetOffline(context.Background(), number, conn.HardwareID, conn.ConnectionID)
 		}
 	}
 }
 
-// RekeyNumber moves all connections and state from oldNumber to newNumber.
-// Safe to call even if oldNumber has no entries.
-func (h *Hub) RekeyNumber(oldNumber, newNumber string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if cs, ok := h.conns[oldNumber]; ok {
-		h.conns[newNumber] = cs
-		delete(h.conns, oldNumber)
+// RenumberLine retires every socket for lineID. When the current number can be
+// resolved, the queued control frame lets digitsd persist it before reconnecting.
+// Retirement does not depend on queue capacity or Redis delivery.
+func (h *Hub) RenumberLine(lineID int64) {
+	h.mu.RLock()
+	resolver := h.lineNumberResolver
+	bridge := h.redis
+	h.mu.RUnlock()
+	newNumber := ""
+	if resolver != nil {
+		newNumber, _ = resolver(lineID)
 	}
-	if vm, ok := h.voicemailUnheard[oldNumber]; ok {
-		h.voicemailUnheard[newNumber] = vm
-		delete(h.voicemailUnheard, oldNumber)
+	h.deliverLineRenumber(lineID, newNumber)
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{TargetType: "line_renumber", TargetLineID: lineID, Message: &Message{Type: TypeLineRenumber}})
 	}
 }
 
-// Get returns the first active connection for a number, or nil if none.
-// Used for connectivity checks (is anyone online on this line?).
-func (h *Hub) Get(number string) *Conn {
+func (h *Hub) deliverLineRenumber(lineID int64, newNumber string) {
+	h.presenceMu.Lock()
+	defer h.presenceMu.Unlock()
+	var data []byte
+	if newNumber != "" {
+		data, _ = (&Message{Type: TypeLineRenumber, Number: newNumber}).Marshal()
+	}
+
+	// Validate outside h.mu because production validators query PostgreSQL.
+	// Only sockets in this snapshot are candidates, so a concurrent reconnect
+	// that registers after validation is never retired by an older event.
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	conns := h.conns[number]
+	var candidates []*Conn
+	for _, conns := range h.conns {
+		for _, conn := range conns {
+			if conn.LineID == lineID {
+				candidates = append(candidates, conn)
+			}
+		}
+	}
+	h.mu.RUnlock()
+	retire := make(map[*Conn]bool, len(candidates))
+	for _, conn := range candidates {
+		current := newNumber != "" && conn.Number == newNumber
+		if conn.ValidateBinding != nil && conn.ValidateBinding() {
+			current = true
+		}
+		retire[conn] = !current
+	}
+
+	type retiredConn struct {
+		conn    *Conn
+		deliver bool
+	}
+	var retired []retiredConn
+	h.mu.Lock()
+	for number, conns := range h.conns {
+		kept := conns[:0]
+		for _, conn := range conns {
+			if !retire[conn] {
+				kept = append(kept, conn)
+				continue
+			}
+			delivered := false
+			if len(data) != 0 {
+				select {
+				case conn.Send <- data:
+					delivered = true
+				default:
+				}
+			}
+			close(conn.Send)
+			if h.hwConns[conn.HardwareID] == conn {
+				delete(h.hwConns, conn.HardwareID)
+			}
+			if perHW := h.voicemailUnheard[number]; perHW != nil {
+				delete(perHW, conn.HardwareID)
+				if len(perHW) == 0 {
+					delete(h.voicemailUnheard, number)
+				}
+			}
+			retired = append(retired, retiredConn{conn: conn, deliver: delivered})
+		}
+		if len(kept) == 0 {
+			delete(h.conns, number)
+		} else {
+			h.conns[number] = kept
+		}
+	}
+	d := h.dashEvents
+	ds := h.state
+	h.mu.Unlock()
+
+	if len(retired) != 0 && d != nil {
+		d.Notify()
+	}
+	for _, item := range retired {
+		if ds != nil {
+			ds.SetOffline(context.Background(), item.conn.Number, item.conn.HardwareID, item.conn.ConnectionID)
+		}
+		if !item.deliver && item.conn.WS != nil {
+			_ = item.conn.WS.Close()
+		}
+	}
+}
+
+// lineIdentityPolicy resolves current ownership and whether legacy zero-ID
+// connections are admissible during the default-off rolling period.
+func (h *Hub) lineIdentityPolicy(number string) (lineID int64, allowLegacy, enforced, ok bool) {
+	if strings.HasPrefix(number, UnpairedPrefix) {
+		return 0, true, false, true
+	}
+	h.mu.RLock()
+	resolver := h.lineResolver
+	legacyResolver := h.legacyIdentityAllowedResolver
+	h.mu.RUnlock()
+	if resolver == nil {
+		return 0, true, false, true
+	}
+	lineID, err := resolver(number)
+	if err != nil {
+		return 0, false, true, false
+	}
+	allowLegacy = true
+	if legacyResolver != nil {
+		var err error
+		allowLegacy, err = legacyResolver()
+		if err != nil {
+			return 0, false, true, false
+		}
+	}
+	return lineID, allowLegacy, true, true
+}
+
+// knownLineIdentityPolicy applies the monotonic legacy policy to a line ID
+// already loaded by an owner-facing database query. It deliberately does not
+// resolve the reusable number again.
+func (h *Hub) knownLineIdentityPolicy(lineID int64) (allowLegacy, enforced, ok bool) {
+	if lineID == 0 {
+		return true, false, true
+	}
+	h.mu.RLock()
+	legacyResolver := h.legacyIdentityAllowedResolver
+	h.mu.RUnlock()
+	allowLegacy = true
+	if legacyResolver != nil {
+		var err error
+		allowLegacy, err = legacyResolver()
+		if err != nil {
+			return false, true, false
+		}
+	}
+	return allowLegacy, true, true
+}
+
+func connectionMatchesLine(conn *Conn, lineID int64, allowLegacy, enforced bool) bool {
+	return !enforced || conn.LineID == lineID || (allowLegacy && conn.LineID == 0)
+}
+
+// Get returns the first identity-eligible connection for a number.
+func (h *Hub) Get(number string) *Conn {
+	conns := h.GetAll(number)
 	if len(conns) == 0 {
 		return nil
 	}
 	return conns[0]
 }
 
-// GetAll returns all active connections for a number. Returns nil if none.
+// GetAll returns identity-eligible active connections for a number.
 func (h *Hub) GetAll(number string) []*Conn {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	conns := h.conns[number]
-	if len(conns) == 0 {
+	conns := append([]*Conn(nil), h.conns[number]...)
+	h.mu.RUnlock()
+	lineID, allowLegacy, enforced, ok := h.lineIdentityPolicy(number)
+	if !ok {
 		return nil
 	}
-	out := make([]*Conn, len(conns))
-	copy(out, conns)
+	out := conns[:0]
+	for _, conn := range conns {
+		if connectionMatchesLine(conn, lineID, allowLegacy, enforced) {
+			out = append(out, conn)
+		}
+	}
 	return out
 }
 
-// ConnectionCount returns the number of active connections for a line.
-func (h *Hub) ConnectionCount(number string) int {
+// GetAllForLine uses a caller-known immutable line identity instead of
+// resolving the reusable number again.
+func (h *Hub) GetAllForLine(number string, lineID int64) []*Conn {
+	allowLegacy, enforced, ok := h.knownLineIdentityPolicy(lineID)
+	if !ok {
+		return nil
+	}
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.conns[number])
+	conns := append([]*Conn(nil), h.conns[number]...)
+	h.mu.RUnlock()
+	out := conns[:0]
+	for _, conn := range conns {
+		if connectionMatchesLine(conn, lineID, allowLegacy, enforced) {
+			out = append(out, conn)
+		}
+	}
+	return out
+}
+
+// ConnectionCount returns the number of identity-eligible connections.
+func (h *Hub) ConnectionCount(number string) int {
+	return len(h.GetAll(number))
+}
+
+// ConnectionCountForLine counts connections for a caller-known line identity.
+func (h *Hub) ConnectionCountForLine(number string, lineID int64) int {
+	return len(h.GetAllForLine(number, lineID))
 }
 
 // ConnIsCurrent reports whether conn is still the hub's registered connection
@@ -512,6 +784,85 @@ func (h *Hub) ConnIsCurrent(conn *Conn) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return slices.Contains(h.conns[conn.Number], conn)
+}
+
+// ConnBindingCurrent reports whether the socket still represents the current
+// number of its immutable line identity.
+func (h *Hub) ConnBindingCurrent(conn *Conn) bool {
+	if conn == nil {
+		return false
+	}
+	if conn.ValidateBinding != nil {
+		return conn.ValidateBinding()
+	}
+	if conn.LineID == 0 {
+		return true
+	}
+	h.mu.RLock()
+	resolver := h.lineNumberResolver
+	h.mu.RUnlock()
+	if resolver == nil {
+		return true
+	}
+	number, err := resolver(conn.LineID)
+	return err == nil && number == conn.Number
+}
+
+// EnsureConnBindingCurrent validates the socket against durable line ownership.
+// A stale or unverifiable paired socket is retired before returning false.
+func (h *Hub) EnsureConnBindingCurrent(conn *Conn) bool {
+	if h.ConnBindingCurrent(conn) {
+		return true
+	}
+	h.retireConn(conn)
+	return false
+}
+
+func (h *Hub) retireConn(conn *Conn) {
+	if conn == nil {
+		return
+	}
+	h.presenceMu.Lock()
+	defer h.presenceMu.Unlock()
+	h.mu.Lock()
+	conns := h.conns[conn.Number]
+	found := false
+	for i, candidate := range conns {
+		if candidate != conn {
+			continue
+		}
+		close(conn.Send)
+		h.conns[conn.Number] = append(conns[:i], conns[i+1:]...)
+		if len(h.conns[conn.Number]) == 0 {
+			delete(h.conns, conn.Number)
+		}
+		if h.hwConns[conn.HardwareID] == conn {
+			delete(h.hwConns, conn.HardwareID)
+		}
+		if perHW := h.voicemailUnheard[conn.Number]; perHW != nil {
+			delete(perHW, conn.HardwareID)
+			if len(perHW) == 0 {
+				delete(h.voicemailUnheard, conn.Number)
+			}
+		}
+		found = true
+		break
+	}
+	d := h.dashEvents
+	ds := h.state
+	h.mu.Unlock()
+	if !found {
+		return
+	}
+	if d != nil {
+		d.Notify()
+	}
+	if ds != nil {
+		ds.SetOffline(context.Background(), conn.Number, conn.HardwareID, conn.ConnectionID)
+	}
+	if conn.WS != nil {
+		_ = conn.WS.Close()
+	}
 }
 
 // ErrSendTimeout is returned by SendToWithTimeout when the target's send
@@ -558,6 +909,32 @@ func (h *Hub) publishFallback(bridge redisPubSub, targetType, target, label stri
 // Returns ErrNotConnected only when no devices are connected locally AND
 // Redis is not configured.
 func (h *Hub) SendTo(number string, msg *Message) error {
+	targetLineID, allowLegacy, enforced, ok := h.lineIdentityPolicy(number)
+	if !ok {
+		return fmt.Errorf("resolve phone %s: identity unavailable", number)
+	}
+	return h.sendToLineIdentity(number, targetLineID, allowLegacy, enforced, msg)
+}
+
+// SendToLine sends only to connections matching a caller-known immutable line
+// ID. Owner-authorized callers use this after loading a line so a later reuse
+// of its number cannot retarget the message to the replacement owner.
+func (h *Hub) SendToLine(number string, lineID int64, msg *Message) error {
+	if lineID == 0 {
+		_, allowLegacy, _, ok := h.lineIdentityPolicy(number)
+		if !ok || !allowLegacy {
+			return fmt.Errorf("resolve line %d: identity unavailable", lineID)
+		}
+		return h.sendToLineIdentity(number, 0, true, true, msg)
+	}
+	allowLegacy, enforced, ok := h.knownLineIdentityPolicy(lineID)
+	if !ok {
+		return fmt.Errorf("resolve line %d: identity unavailable", lineID)
+	}
+	return h.sendToLineIdentity(number, lineID, allowLegacy, enforced, msg)
+}
+
+func (h *Hub) sendToLineIdentity(number string, targetLineID int64, allowLegacy, enforced bool, msg *Message) error {
 	data, err := msg.Marshal()
 	if err != nil {
 		return err
@@ -567,7 +944,12 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	conns := h.conns[number]
 	bridge := h.redis
 	dropHook := h.dropHook
+	eligible := 0
 	for _, conn := range conns {
+		if !connectionMatchesLine(conn, targetLineID, allowLegacy, enforced) {
+			continue
+		}
+		eligible++
 		select {
 		case conn.Send <- data:
 		default:
@@ -580,13 +962,11 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	}
 	h.mu.RUnlock()
 
-	// Always publish for cross-pod delivery, even when a local device received
-	// the message: a line's devices can live on other pods.
 	if bridge != nil {
-		h.publish(bridge, "number", number, msg)
+		bridge.Publish(context.Background(), &Envelope{TargetType: "number", Target: number, TargetLineID: targetLineID, Message: msg})
 		return nil
 	}
-	if len(conns) == 0 {
+	if eligible == 0 {
 		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 	}
 	return nil
@@ -614,6 +994,10 @@ const sendRetryInterval = 20 * time.Millisecond
 // for the whole timeout, ErrNotConnected if there is neither a local conn nor
 // a Redis bridge.
 func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Duration) error {
+	targetLineID, allowLegacy, enforced, ok := h.lineIdentityPolicy(number)
+	if !ok {
+		return fmt.Errorf("resolve phone %s: identity unavailable", number)
+	}
 	data, err := msg.Marshal()
 	if err != nil {
 		return err
@@ -623,7 +1007,7 @@ func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Durati
 	bridge := h.redis
 	h.mu.RUnlock()
 	if bridge != nil {
-		h.publish(bridge, "number", number, msg)
+		bridge.Publish(context.Background(), &Envelope{TargetType: "number", Target: number, TargetLineID: targetLineID, Message: msg})
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -642,7 +1026,12 @@ func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Durati
 			return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 		}
 		pending := false
+		eligible := 0
 		for _, conn := range conns {
+			if !connectionMatchesLine(conn, targetLineID, allowLegacy, enforced) {
+				continue
+			}
+			eligible++
 			if delivered[conn] {
 				continue
 			}
@@ -654,6 +1043,9 @@ func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Durati
 			}
 		}
 		h.mu.RUnlock()
+		if eligible == 0 && bridge == nil {
+			return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
+		}
 
 		if !pending {
 			return nil
@@ -764,23 +1156,42 @@ type DeviceInfoSnapshot struct {
 	DevMode bool `json:"-"`
 }
 
-// AllDeviceInfo returns version info for all connected devices on a line.
+// AllDeviceInfo returns version info for identity-eligible devices on a line.
 func (h *Hub) AllDeviceInfo(number string) []DeviceInfoSnapshot {
+	lineID, allowLegacy, enforced, ok := h.lineIdentityPolicy(number)
+	if !ok {
+		return nil
+	}
+	return h.allDeviceInfo(number, lineID, allowLegacy, enforced)
+}
+
+// AllDeviceInfoForLine returns device metadata for a caller-known line ID.
+func (h *Hub) AllDeviceInfoForLine(number string, lineID int64) []DeviceInfoSnapshot {
+	allowLegacy, enforced, ok := h.knownLineIdentityPolicy(lineID)
+	if !ok {
+		return nil
+	}
+	return h.allDeviceInfo(number, lineID, allowLegacy, enforced)
+}
+
+func (h *Hub) allDeviceInfo(number string, lineID int64, allowLegacy, enforced bool) []DeviceInfoSnapshot {
 	h.mu.RLock()
 	ds := h.state
 	h.mu.RUnlock()
 	if ds != nil {
+		if enforced {
+			return ds.AllDeviceInfoForIdentity(context.Background(), number, lineID, allowLegacy)
+		}
 		return ds.AllDeviceInfo(context.Background(), number)
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	conns := h.conns[number]
-	if len(conns) == 0 {
-		return nil
-	}
-	snapshots := make([]DeviceInfoSnapshot, len(conns))
-	for i, c := range conns {
-		snapshots[i] = DeviceInfoSnapshot{
+	var snapshots []DeviceInfoSnapshot
+	for _, c := range h.conns[number] {
+		if !connectionMatchesLine(c, lineID, allowLegacy, enforced) {
+			continue
+		}
+		snapshots = append(snapshots, DeviceInfoSnapshot{
 			HardwareID:      c.HardwareID,
 			PiVersion:       c.PiVersion,
 			PiCommit:        c.PiCommit,
@@ -788,7 +1199,7 @@ func (h *Hub) AllDeviceInfo(number string) []DeviceInfoSnapshot {
 			FirmwareCommit:  c.FirmwareCommit,
 			RemoteAddr:      c.RemoteAddr,
 			DevMode:         c.DevMode,
-		}
+		})
 	}
 	return snapshots
 }
@@ -838,6 +1249,19 @@ func (h *Hub) ClearUpdateStatus(hardwareID string) {
 // shared map under a "" key. Per-handset because voicemail is local to the
 // device; the per-line total is the sum across handsets.
 func (h *Hub) SetVoicemailUnheard(number, hwID string, count int) {
+	h.mu.RLock()
+	lineID := int64(0)
+	if conn := h.hwConns[hwID]; conn != nil && conn.Number == number {
+		lineID = conn.LineID
+	}
+	h.mu.RUnlock()
+	h.SetVoicemailUnheardForLine(number, lineID, hwID, count)
+}
+
+// SetVoicemailUnheardForLine binds a device report to the immutable line
+// identity authenticated for its socket. This prevents a delayed old-owner
+// report from becoming metadata for a replacement owner of the same number.
+func (h *Hub) SetVoicemailUnheardForLine(number string, lineID int64, hwID string, count int) {
 	if hwID == "" {
 		return
 	}
@@ -848,22 +1272,41 @@ func (h *Hub) SetVoicemailUnheard(number, hwID string, count int) {
 	defer h.mu.Unlock()
 	perHW, ok := h.voicemailUnheard[number]
 	if !ok {
-		perHW = make(map[string]int)
+		perHW = make(map[string]voicemailPresence)
 		h.voicemailUnheard[number] = perHW
 	}
-	perHW[hwID] = count
+	perHW[hwID] = voicemailPresence{LineID: lineID, Count: count}
 }
 
 // LineVoicemailUnheard returns the sum of unheard-voicemail counts across all
 // handsets currently tracked on this line. Zero when the line has no entries
 // (no handsets ever reported, or all handsets disconnected).
 func (h *Hub) LineVoicemailUnheard(number string) int {
+	lineID, allowLegacy, enforced, ok := h.lineIdentityPolicy(number)
+	if !ok {
+		return 0
+	}
+	return h.lineVoicemailUnheard(number, lineID, allowLegacy, enforced)
+}
+
+// LineVoicemailUnheardForLine returns counts for a caller-known line ID.
+func (h *Hub) LineVoicemailUnheardForLine(number string, lineID int64) int {
+	allowLegacy, enforced, ok := h.knownLineIdentityPolicy(lineID)
+	if !ok {
+		return 0
+	}
+	return h.lineVoicemailUnheard(number, lineID, allowLegacy, enforced)
+}
+
+func (h *Hub) lineVoicemailUnheard(number string, lineID int64, allowLegacy, enforced bool) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	perHW := h.voicemailUnheard[number]
 	total := 0
-	for _, n := range perHW {
-		total += n
+	for _, presence := range perHW {
+		if !enforced || presence.LineID == lineID || (allowLegacy && presence.LineID == 0) {
+			total += presence.Count
+		}
 	}
 	return total
 }
@@ -904,7 +1347,7 @@ func (h *Hub) UpdateDeviceInfo(number string, p DeviceInfoParams) bool {
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.UpdateDeviceInfo(context.Background(), hwID, presence)
+		ds.UpdateDeviceInfo(context.Background(), hwID, conn.ConnectionID, presence)
 	}
 	return true
 }
@@ -912,10 +1355,21 @@ func (h *Hub) UpdateDeviceInfo(number string, p DeviceInfoParams) bool {
 // UpdateDeviceInfoByHardware sets version info for a specific device by
 // hardware ID. Used when the caller knows which device sent the message.
 func (h *Hub) UpdateDeviceInfoByHardware(hardwareID string, p DeviceInfoParams) bool {
+	h.mu.RLock()
+	conn := h.hwConns[hardwareID]
+	h.mu.RUnlock()
+	if conn == nil {
+		return false
+	}
+	return h.UpdateDeviceInfoByConnection(hardwareID, conn.ConnectionID, p)
+}
+
+// UpdateDeviceInfoByConnection rejects writes from a displaced socket.
+func (h *Hub) UpdateDeviceInfoByConnection(hardwareID, connectionID string, p DeviceInfoParams) bool {
 	p.RemoteAddr = sanitizeLocalAddr(p.RemoteAddr)
 	h.mu.Lock()
-	conn, ok := h.hwConns[hardwareID]
-	if !ok {
+	conn := h.hwConns[hardwareID]
+	if conn == nil || conn.ConnectionID != connectionID {
 		h.mu.Unlock()
 		return false
 	}
@@ -923,7 +1377,7 @@ func (h *Hub) UpdateDeviceInfoByHardware(hardwareID string, p DeviceInfoParams) 
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.UpdateDeviceInfo(context.Background(), hardwareID, presence)
+		ds.UpdateDeviceInfo(context.Background(), hardwareID, connectionID, presence)
 	}
 	return true
 }
@@ -959,46 +1413,64 @@ func applyDeviceInfo(conn *Conn, p DeviceInfoParams) DevicePresence {
 	}
 }
 
-// TouchLastSeen updates the last-seen timestamp for the device identified
-// by hardwareID on the given line. hardwareID must be non-empty; the WS
-// handler enforces a hardware_id at register time, so every caller already
-// has one in scope.
-func (h *Hub) TouchLastSeen(number, hardwareID string) {
+// TouchLastSeen updates last-seen only when the reporting socket is still the
+// authoritative hardware generation on this line.
+func (h *Hub) TouchLastSeen(number, hardwareID, connectionID string) {
 	now := time.Now()
 	h.mu.Lock()
-	for _, c := range h.conns[number] {
-		if c.HardwareID == hardwareID {
-			c.LastSeen = now
-		}
+	conn := h.hwConns[hardwareID]
+	if conn == nil || conn.Number != number || conn.ConnectionID != connectionID {
+		h.mu.Unlock()
+		return
 	}
+	conn.LastSeen = now
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.TouchLastSeen(context.Background(), number, hardwareID)
+		ds.TouchLastSeen(context.Background(), number, hardwareID, connectionID)
 	}
 }
 
 // LastSeenAt returns the most recent last-seen timestamp across all
 // connected devices on a line, or nil if no device is online.
 func (h *Hub) LastSeenAt(number string) *time.Time {
-	h.mu.RLock()
-	ds := h.state
-	h.mu.RUnlock()
-	if ds != nil {
-		return ds.LastSeenAt(context.Background(), number)
-	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	var latest time.Time
-	for _, conn := range h.conns[number] {
-		if conn.LastSeen.After(latest) {
-			latest = conn.LastSeen
-		}
-	}
-	if latest.IsZero() {
+	lineID, allowLegacy, enforced, ok := h.lineIdentityPolicy(number)
+	if !ok {
 		return nil
 	}
-	return &latest
+	return h.lastSeenAt(number, lineID, allowLegacy, enforced)
+}
+
+// LastSeenAtForLine returns last-seen metadata for a caller-known line ID.
+func (h *Hub) LastSeenAtForLine(number string, lineID int64) *time.Time {
+	allowLegacy, enforced, ok := h.knownLineIdentityPolicy(lineID)
+	if !ok {
+		return nil
+	}
+	return h.lastSeenAt(number, lineID, allowLegacy, enforced)
+}
+
+func (h *Hub) lastSeenAt(number string, lineID int64, allowLegacy, enforced bool) *time.Time {
+	h.mu.RLock()
+	ds := h.state
+	if ds == nil {
+		defer h.mu.RUnlock()
+		var latest time.Time
+		for _, conn := range h.conns[number] {
+			if connectionMatchesLine(conn, lineID, allowLegacy, enforced) && conn.LastSeen.After(latest) {
+				latest = conn.LastSeen
+			}
+		}
+		if latest.IsZero() {
+			return nil
+		}
+		return &latest
+	}
+	h.mu.RUnlock()
+	if enforced {
+		return ds.LastSeenAtForIdentity(context.Background(), number, lineID, allowLegacy)
+	}
+	return ds.LastSeenAt(context.Background(), number)
 }
 
 // IsOnline returns true if the number has at least one active hub connection
@@ -1007,13 +1479,42 @@ func (h *Hub) IsOnline(number string) bool {
 	if strings.HasPrefix(number, UnpairedPrefix) {
 		return false
 	}
+	lineID, allowLegacy, enforced, ok := h.lineIdentityPolicy(number)
+	if !ok {
+		return false
+	}
+	return h.isOnline(number, lineID, allowLegacy, enforced)
+}
+
+// IsOnlineForLine checks presence for a caller-known line ID.
+func (h *Hub) IsOnlineForLine(number string, lineID int64) bool {
+	if strings.HasPrefix(number, UnpairedPrefix) {
+		return false
+	}
+	allowLegacy, enforced, ok := h.knownLineIdentityPolicy(lineID)
+	if !ok {
+		return false
+	}
+	return h.isOnline(number, lineID, allowLegacy, enforced)
+}
+
+func (h *Hub) isOnline(number string, lineID int64, allowLegacy, enforced bool) bool {
 	h.mu.RLock()
 	ds := h.state
+	conns := append([]*Conn(nil), h.conns[number]...)
 	h.mu.RUnlock()
 	if ds != nil {
+		if enforced {
+			return ds.LineIdentityOnline(context.Background(), number, lineID, allowLegacy)
+		}
 		return ds.IsOnline(context.Background(), number)
 	}
-	return h.Get(number) != nil
+	for _, conn := range conns {
+		if connectionMatchesLine(conn, lineID, allowLegacy, enforced) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsHardwareOnline reports whether the device with this hardware id is
@@ -1077,10 +1578,24 @@ func (h *Hub) OnlineNumbers() []string {
 	h.mu.RLock()
 	ds := h.state
 	h.mu.RUnlock()
+	numbers := h.LocalNumbers()
 	if ds != nil {
-		return ds.OnlineNumbers(context.Background())
+		numbers = ds.OnlineNumbers(context.Background())
 	}
-	return h.LocalNumbers()
+	online := numbers[:0]
+	for _, number := range numbers {
+		if h.IsOnline(number) {
+			online = append(online, number)
+		}
+	}
+	return online
+}
+
+// LineIdentity is a local connection's reusable number paired with its
+// immutable line ID.
+type LineIdentity struct {
+	Number string
+	LineID int64
 }
 
 // LocalNumbers returns the line numbers with at least one connection on THIS
@@ -1101,4 +1616,41 @@ func (h *Hub) LocalNumbers() []string {
 		nums = append(nums, n)
 	}
 	return nums
+}
+
+// LocalLineIdentities returns each distinct local number and line identity.
+func (h *Hub) LocalLineIdentities() []LineIdentity {
+	h.mu.RLock()
+	legacyResolver := h.legacyIdentityAllowedResolver
+	h.mu.RUnlock()
+	allowLegacy := true
+	if legacyResolver != nil {
+		var err error
+		allowLegacy, err = legacyResolver()
+		if err != nil {
+			allowLegacy = false
+		}
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	seen := make(map[LineIdentity]struct{})
+	identities := make([]LineIdentity, 0, len(h.conns))
+	for number, conns := range h.conns {
+		if strings.HasPrefix(number, UnpairedPrefix) {
+			continue
+		}
+		for _, conn := range conns {
+			if conn.LineID == 0 && !allowLegacy {
+				continue
+			}
+			identity := LineIdentity{Number: number, LineID: conn.LineID}
+			if _, ok := seen[identity]; ok {
+				continue
+			}
+			seen[identity] = struct{}{}
+			identities = append(identities, identity)
+		}
+	}
+	return identities
 }

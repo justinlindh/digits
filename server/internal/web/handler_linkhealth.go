@@ -397,6 +397,17 @@ func renderEndedConferenceFragment(endedBy string) string {
 // Idempotent: calling against an already-ended call returns 200 without
 // overwriting the audit column.
 func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
+	err := h.lineStore.WithRenumberReadFence(r.Context(), func(context.Context) error {
+		h.handleCallDisconnectFenced(w, r)
+		return nil
+	})
+	if err != nil {
+		slog.ErrorContext(r.Context(), "renumber read fence failed", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleCallDisconnectFenced(w http.ResponseWriter, r *http.Request) {
 	callID, ok := parseCallID(w, r)
 	if !ok {
 		return

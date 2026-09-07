@@ -1,8 +1,10 @@
 package signaling
 
 import (
+	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestHardwareDeliveryConcurrentLifecycle(t *testing.T) {
@@ -141,4 +143,133 @@ func TestHardwareDeliveryFullQueueSemantics(t *testing.T) {
 			t.Fatalf("published target = %q/%q, want hardware/hw-remote", got.TargetType, got.Target)
 		}
 	})
+}
+
+func TestRenumberDoesNotMoveLiveConnectionIdentity(t *testing.T) {
+	h := NewHub()
+	conn := &Conn{LineID: 17, HardwareID: "hw-renumber", Send: make(chan []byte, 1)}
+	if err := h.Register("3140001", conn); err != nil {
+		t.Fatal(err)
+	}
+
+	h.SetLineResolver(nil, func(int64) (string, error) { return "3140002", nil })
+	h.RenumberLine(17)
+
+	if conn.Number != "3140001" {
+		t.Fatalf("connection identity changed to %q", conn.Number)
+	}
+	h.Unregister(conn.Number, conn)
+	if got := h.ConnectionCount("3140002"); got != 0 {
+		t.Fatalf("disconnect left %d ghost connection(s) on new number", got)
+	}
+}
+
+func TestSendToFiltersStaleConnectionAfterOldNumberReuse(t *testing.T) {
+	h := NewHub()
+	h.SetLineResolver(func(string) (int64, error) { return 22, nil }, nil)
+	stale := &Conn{LineID: 11, HardwareID: "old-line", Send: make(chan []byte, 1)}
+	current := &Conn{LineID: 22, HardwareID: "new-line", Send: make(chan []byte, 1)}
+	if err := h.Register("3140001", stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Register("3140001", current); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SendTo("3140001", &Message{Type: TypeRing}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-stale.Send:
+		t.Fatal("stale line identity received reused-number traffic")
+	default:
+	}
+	select {
+	case <-current.Send:
+	default:
+		t.Fatal("current line identity did not receive traffic")
+	}
+}
+
+func TestRenumberResolverFailureStillRetiresSocket(t *testing.T) {
+	h := NewHub()
+	h.SetLineResolver(nil, func(int64) (string, error) { return "", errors.New("database unavailable") })
+	c := &Conn{LineID: 19, HardwareID: "hw-resolver", Send: make(chan []byte, 1)}
+	if err := h.Register("3140019", c); err != nil {
+		t.Fatal(err)
+	}
+	h.RenumberLine(19)
+	if h.ConnIsCurrent(c) {
+		t.Fatal("resolver failure left stale socket registered")
+	}
+}
+
+func TestLocalLineDeliveryRejectsLegacyConnectionsAfterIdentityCutover(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		send func(*Hub, string, *Message) error
+	}{
+		{name: "best effort", send: func(h *Hub, number string, msg *Message) error { return h.SendTo(number, msg) }},
+		{name: "timeout", send: func(h *Hub, number string, msg *Message) error {
+			return h.SendToWithTimeout(number, msg, time.Millisecond)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewHub()
+			h.SetLineResolver(func(string) (int64, error) { return 22, nil }, nil)
+			h.SetLegacyIdentityAllowedResolver(func() (bool, error) { return false, nil })
+			legacy := &Conn{HardwareID: "legacy", Send: make(chan []byte, 1)}
+			if err := h.Register("3140022", legacy); err != nil {
+				t.Fatal(err)
+			}
+			err := tc.send(h, "3140022", &Message{Type: TypeRing})
+			if !errors.Is(err, ErrNotConnected) {
+				t.Fatalf("send error = %v, want ErrNotConnected", err)
+			}
+			select {
+			case <-legacy.Send:
+				t.Fatal("legacy zero-ID connection received post-cutover traffic")
+			default:
+			}
+		})
+	}
+}
+
+func TestDelayedRenumberEventPreservesAlreadyCurrentConnection(t *testing.T) {
+	h := NewHub()
+	oldConn := &Conn{LineID: 17, HardwareID: "old-socket", Send: make(chan []byte, 1)}
+	currentConn := &Conn{LineID: 17, HardwareID: "current-socket", Send: make(chan []byte, 1)}
+	if err := h.Register("3140001", oldConn); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Register("3140002", currentConn); err != nil {
+		t.Fatal(err)
+	}
+	h.deliverLineRenumber(17, "3140002")
+	if h.ConnIsCurrent(oldConn) {
+		t.Fatal("delayed renumber left stale old-number socket current")
+	}
+	if !h.ConnIsCurrent(currentConn) {
+		t.Fatal("delayed renumber retired already-current replacement socket")
+	}
+	select {
+	case <-currentConn.Send:
+		t.Fatal("already-current socket received stale renumber control")
+	default:
+	}
+}
+
+func TestCrossNumberReconnectClearsOldVoicemailState(t *testing.T) {
+	h := NewHub()
+	oldConn := &Conn{HardwareID: "moving-handset", Send: make(chan []byte, 1)}
+	if err := h.Register("3140001", oldConn); err != nil {
+		t.Fatal(err)
+	}
+	h.SetVoicemailUnheard("3140001", oldConn.HardwareID, 3)
+	newConn := &Conn{HardwareID: oldConn.HardwareID, Send: make(chan []byte, 1)}
+	if err := h.Register("3140002", newConn); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.LineVoicemailUnheard("3140001"); got != 0 {
+		t.Fatalf("cross-number reconnect left old voicemail count %d", got)
+	}
 }

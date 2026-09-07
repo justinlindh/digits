@@ -523,7 +523,7 @@ func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string) bool 
 		return false
 	}
 	for _, l := range lines {
-		for _, info := range h.hub.AllDeviceInfo(l.Number) {
+		for _, info := range h.hub.AllDeviceInfoForLine(l.Number, l.ID) {
 			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
 				return true
 			}

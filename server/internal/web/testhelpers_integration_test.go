@@ -232,7 +232,7 @@ func setupLineWithConn(t *testing.T, h *Handler, database *db.Database, hh *hous
 	if err != nil {
 		t.Fatalf("add line %s: %v", number, err)
 	}
-	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	conn := &signaling.Conn{LineID: ln.ID, Send: make(chan []byte, 10)}
 	_ = h.hub.Register(number, conn)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)

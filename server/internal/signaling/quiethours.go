@@ -42,7 +42,7 @@ type QuietHoursScheduler struct {
 	store LineStore
 
 	mu       sync.Mutex
-	lastSent map[string]bool // number -> last pushed effective SilentMode
+	lastSent map[LineIdentity]bool // local line identity -> last pushed effective SilentMode
 }
 
 // NewQuietHoursScheduler wires a scheduler to the hub (for the locally
@@ -52,7 +52,7 @@ func NewQuietHoursScheduler(hub *Hub, store LineStore) *QuietHoursScheduler {
 	return &QuietHoursScheduler{
 		hub:      hub,
 		store:    store,
-		lastSent: make(map[string]bool),
+		lastSent: make(map[LineIdentity]bool),
 	}
 }
 
@@ -81,51 +81,53 @@ func (s *QuietHoursScheduler) Run(ctx context.Context) {
 // or migrated to another replica) so the map cannot grow unbounded and a
 // reconnect re-seeds from a clean slate.
 func (s *QuietHoursScheduler) evaluate(ctx context.Context) {
-	local := s.hub.LocalNumbers()
-	localSet := make(map[string]bool, len(local))
-	for _, number := range local {
-		localSet[number] = true
+	local := s.hub.LocalLineIdentities()
+	localSet := make(map[LineIdentity]bool, len(local))
+	for _, identity := range local {
+		localSet[identity] = true
 	}
 
 	s.mu.Lock()
-	for number := range s.lastSent {
-		if !localSet[number] {
-			delete(s.lastSent, number)
+	for identity := range s.lastSent {
+		if !localSet[identity] {
+			delete(s.lastSent, identity)
 		}
 	}
 	s.mu.Unlock()
 
-	for _, number := range local {
-		settings, err := s.store.EffectiveLineSettings(ctx, number)
+	for _, identity := range local {
+		pushed := false
+		err := s.store.WithRenumberReadFence(ctx, func(fencedCtx context.Context) error {
+			settings, err := s.store.EffectiveLineSettingsForLine(fencedCtx, identity.Number, identity.LineID)
+			if err != nil {
+				return err
+			}
+			if settings == nil {
+				return nil
+			}
+
+			s.mu.Lock()
+			prev, seen := s.lastSent[identity]
+			s.lastSent[identity] = settings.SilentMode
+			s.mu.Unlock()
+
+			if seen && prev == settings.SilentMode {
+				return nil
+			}
+			err = s.hub.SendToLine(identity.Number, identity.LineID, &Message{
+				Type:         TypeLineSettings,
+				To:           identity.Number,
+				LineSettings: settings,
+			})
+			pushed = err == nil
+			return err
+		})
 		if err != nil {
-			slog.DebugContext(ctx, "quiet-hours eval skipped", "number", number, "err", err)
+			slog.DebugContext(ctx, "quiet-hours eval skipped", "number", identity.Number, "line_id", identity.LineID, "err", err)
 			continue
 		}
-		if settings == nil {
-			continue
-		}
-
-		s.mu.Lock()
-		prev, seen := s.lastSent[number]
-		s.lastSent[number] = settings.SilentMode
-		s.mu.Unlock()
-
-		// On a steady state (already seen and unchanged) emit nothing. On the
-		// first sight of a line, push the current effective state to close the
-		// seed gap: a window boundary can cross between OnRegistered's
-		// connect-push and this first tick, and the daemon dedupes by value so
-		// the push is a no-op when the device already matches.
-		if seen && prev == settings.SilentMode {
-			continue
-		}
-		if err := s.hub.SendTo(number, &Message{
-			Type:         TypeLineSettings,
-			To:           number,
-			LineSettings: settings,
-		}); err != nil {
-			slog.WarnContext(ctx, "quiet-hours push failed", "number", number, "err", err)
-		} else {
-			slog.InfoContext(ctx, "quiet-hours transition pushed", "number", number, "silent", settings.SilentMode)
+		if pushed {
+			slog.InfoContext(ctx, "quiet-hours transition pushed", "number", identity.Number, "line_id", identity.LineID)
 		}
 	}
 }

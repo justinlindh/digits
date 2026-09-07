@@ -110,23 +110,27 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
-	if err := h.lineStore.SetAllSilentByHousehold(r.Context(), hh.ID, enabled); err != nil {
+	err := h.lineStore.WithRenumberReadFence(r.Context(), func(fencedCtx context.Context) error {
+		if err := h.lineStore.SetAllSilentByHousehold(fencedCtx, hh.ID, enabled); err != nil {
+			return err
+		}
+		lines, err := h.lineStore.ListByHousehold(fencedCtx, hh.ID)
+		if err != nil {
+			return err
+		}
+		for _, ln := range lines {
+			updated := ln.Settings
+			updated.SilentMode = enabled
+			if pushErr := h.pushLineSettings(ln.Number, ln.ID, updated); pushErr != nil {
+				slog.WarnContext(fencedCtx, "silence fan-out push failed", "number", ln.Number, "line_id", ln.ID, "err", pushErr)
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		slog.ErrorContext(r.Context(), "set all silent failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
-	}
-	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "list lines for silence fan-out failed", "err", err, "household_id", hh.ID)
-		http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
-		return
-	}
-	for _, ln := range lines {
-		updated := ln.Settings
-		updated.SilentMode = enabled
-		if pushErr := h.pushLineSettings(ln.Number, updated); pushErr != nil {
-			slog.WarnContext(r.Context(), "silence fan-out push failed", "number", ln.Number, "err", pushErr)
-		}
 	}
 	if isHTMX(r) {
 		data := h.buildLinesData(r, hh)
@@ -315,7 +319,7 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 			}
 			for _, ln := range lines {
 				h.tracker.ClearByNumber(r.Context(), ln.Number)
-				for _, conn := range h.hub.GetAll(ln.Number) {
+				for _, conn := range h.hub.GetAllForLine(ln.Number, ln.ID) {
 					h.hub.Unregister(ln.Number, conn)
 				}
 			}

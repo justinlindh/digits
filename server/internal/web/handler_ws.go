@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -21,6 +23,20 @@ const (
 )
 
 // wsReject sends an error message to the WebSocket client and closes the connection.
+var errStaleConnectionBinding = errors.New("stale connection binding")
+
+func (h *Handler) withCurrentConn(ctx context.Context, conn *signaling.Conn, fn func(context.Context) error) error {
+	if conn.LineID == 0 {
+		return fn(ctx)
+	}
+	return h.lineStore.WithRenumberReadFence(ctx, func(fencedCtx context.Context) error {
+		if !h.hub.EnsureConnBindingCurrent(conn) {
+			return errStaleConnectionBinding
+		}
+		return fn(fencedCtx)
+	})
+}
+
 func wsReject(ws *websocket.Conn, errMsg string) {
 	_ = ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
 		Type:  signaling.TypeError,
@@ -77,6 +93,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	// bound line number is authoritative: a device cannot register as a
 	// line it is not paired to.
 	isPaired := false
+	var boundLineID int64
 	// reconciledNumber is set to the bound line number when a paired device
 	// registered with a stale number. After the connection is wired up we push
 	// it back so the device persists the correction and stops re-claiming the
@@ -114,7 +131,8 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			isPaired = true
-			boundNumber, err := h.deviceStore.BoundLineNumber(r.Context(), msg.HardwareID)
+			var boundNumber string
+			boundLineID, boundNumber, err = h.deviceStore.BoundLineIdentity(r.Context(), msg.HardwareID)
 			if err != nil {
 				slog.ErrorContext(r.Context(), "bound line lookup failed", "hardware_id", msg.HardwareID, "err", err)
 				wsReject(ws, "internal error")
@@ -143,11 +161,19 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	registeredNumber := msg.Number
 	conn := &signaling.Conn{
 		WS:         ws,
+		LineID:     boundLineID,
 		HardwareID: msg.HardwareID,
 		Send:       make(chan []byte, wsSendBuf),
 		LastSeen:   time.Now(),
+	}
+	if isPaired {
+		conn.ValidateBinding = func() bool {
+			lineID, currentNumber, bindErr := h.deviceStore.BoundLineIdentity(r.Context(), conn.HardwareID)
+			return bindErr == nil && lineID == conn.LineID && currentNumber == registeredNumber
+		}
 	}
 	// Self-heal a stale-number register: tell the device its real line number
 	// so digitsd persists it and registers correctly next time. Enqueued before
@@ -160,15 +186,32 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			Number: reconciledNumber,
 		})
 	}
-	if err := h.hub.Register(msg.Number, conn); err != nil {
-		wsReject(ws, "server shutting down")
+	register := func() error { return h.hub.Register(registeredNumber, conn) }
+	if isPaired {
+		err = h.lineStore.WithRenumberReadFence(r.Context(), func(fencedCtx context.Context) error {
+			lineID, currentNumber, bindErr := h.deviceStore.BoundLineIdentity(fencedCtx, conn.HardwareID)
+			if bindErr != nil || lineID != conn.LineID || currentNumber != registeredNumber {
+				return errStaleConnectionBinding
+			}
+			if err := register(); err != nil {
+				return err
+			}
+			h.relay.OnRegistered(fencedCtx, registeredNumber)
+			h.relay.OnReconnect(fencedCtx, registeredNumber, conn.HardwareID)
+			return nil
+		})
+	} else {
+		err = register()
+	}
+	if err != nil {
+		if errors.Is(err, signaling.ErrDraining) {
+			wsReject(ws, "server shutting down")
+		} else {
+			_ = ws.Close()
+		}
 		return
 	}
-	if isPaired {
-		h.relay.OnRegistered(r.Context(), msg.Number)
-		h.relay.OnReconnect(r.Context(), msg.Number, msg.HardwareID)
-	}
-	number := msg.Number
+	number := registeredNumber
 	ctx := r.Context()
 
 	// Configure pong handler to extend read deadline on each pong
@@ -176,10 +219,13 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		slog.WarnContext(ctx, "ws set pong deadline failed", "err", err)
 	}
 	ws.SetPongHandler(func(string) error {
+		if !h.hub.EnsureConnBindingCurrent(conn) {
+			return errStaleConnectionBinding
+		}
 		if err := ws.SetReadDeadline(time.Now().Add(wsPongTimeout)); err != nil {
 			return err
 		}
-		h.hub.TouchLastSeen(number, conn.HardwareID)
+		h.hub.TouchLastSeen(number, conn.HardwareID, conn.ConnectionID)
 		return nil
 	})
 
@@ -202,6 +248,9 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case <-ticker.C:
+				if !h.hub.EnsureConnBindingCurrent(conn) {
+					return
+				}
 				if err := ws.SetWriteDeadline(time.Now().Add(wsWriteTimeout)); err != nil {
 					return
 				}
@@ -235,24 +284,26 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			slog.WarnContext(ctx, "bad websocket message", "number", number, "err", err)
 			continue
 		}
-		// TypeRepair is intercepted here (not in relay) because we have the
-		// authenticated connection's HardwareID in scope and don't need to
-		// thread the device store into the Relay. The phone calls this from
-		// its *#0* callback before reboot to invalidate server-side pairing,
-		// so the next register-without-token is treated as a fresh pair-up
-		// rather than rejected as "device_token required".
-		if msg.Type == signaling.TypeRepair {
-			if h.deviceStore != nil {
-				if err := h.deviceStore.Unpair(ctx, conn.HardwareID); err != nil {
-					slog.WarnContext(ctx, "repair: unpair failed", "hardware_id", conn.HardwareID, "err", err)
-				} else {
-					slog.InfoContext(ctx, "repair: device unpaired by client request", "hardware_id", conn.HardwareID, "number", number)
+		err = h.withCurrentConn(ctx, conn, func(fencedCtx context.Context) error {
+			// TypeRepair is intercepted here because the authenticated hardware
+			// identity is available at the WebSocket boundary.
+			if msg.Type == signaling.TypeRepair {
+				if h.deviceStore != nil {
+					if unpairErr := h.deviceStore.Unpair(fencedCtx, conn.HardwareID); unpairErr != nil {
+						slog.WarnContext(fencedCtx, "repair: unpair failed", "hardware_id", conn.HardwareID, "err", unpairErr)
+					} else {
+						slog.InfoContext(fencedCtx, "repair: device unpaired by client request", "hardware_id", conn.HardwareID, "number", number)
+					}
 				}
+				return nil
 			}
-			continue
+			msg.HardwareID = conn.HardwareID
+			h.relay.HandleMessageFromBinding(fencedCtx, number, conn.LineID, conn.ConnectionID, msg)
+			return nil
+		})
+		if err != nil {
+			return
 		}
-		msg.HardwareID = conn.HardwareID
-		h.relay.HandleMessage(ctx, number, msg)
 	}
 }
 

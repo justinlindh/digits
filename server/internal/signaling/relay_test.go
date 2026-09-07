@@ -40,6 +40,8 @@ func (m *mockTracker) onCallInitiated(from, to string) {
 
 // setCallID sets the call ID for an active call (test helper).
 func (m *mockTracker) setCallID(from, to string, id int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.callIDs[from+"→"+to] = id
 	m.callIDs[to+"→"+from] = id
 }
@@ -49,6 +51,10 @@ func (m *mockTracker) OnCallInitiated(ctx context.Context, from, to string) (int
 	m.calls[from+"→"+to] = true
 	m.callIDs[from+"→"+to] = 1
 	return 1, nil
+}
+
+func (m *mockTracker) OnCallInitiatedBound(ctx context.Context, from, to string, _, _ int64) (int64, error) {
+	return m.OnCallInitiated(ctx, from, to)
 }
 func (m *mockTracker) OnCallAnswered(ctx context.Context, caller, callee string) error {
 	m.answered = append(m.answered, caller+"→"+callee)
@@ -153,6 +159,8 @@ func (m *mockTracker) CreateConferencePersistent(ctx context.Context, host strin
 }
 
 func (m *mockTracker) CallIDForPair(_ context.Context, a, b string) int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if id, ok := m.callIDs[a+"→"+b]; ok {
 		return id
 	}

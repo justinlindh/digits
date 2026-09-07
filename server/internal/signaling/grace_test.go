@@ -452,3 +452,22 @@ func TestGraceLifecycleExpiryTearsDownAndNotifiesPeer(t *testing.T) {
 		t.Fatalf("OnCallEnded = %v, want [3140001->3140002]", tracker.ended)
 	}
 }
+
+func TestGraceExpiryDoesNotEndReplacementCallOnReusedNumber(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
+	tracker.setCallID("3140001", "3140002", 41)
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = 40 * time.Millisecond
+	peer := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140002", peer)
+
+	relay.startGraceTimer("3140001", "old-hardware", "3140002")
+	tracker.setCallID("3140001", "3140002", 42)
+	time.Sleep(100 * time.Millisecond)
+	if len(tracker.ended) != 0 {
+		t.Fatalf("stale grace callback ended replacement call: %v", tracker.ended)
+	}
+	expectNoMessage(t, peer)
+}

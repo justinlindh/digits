@@ -5,6 +5,7 @@ package line
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"testing"
 
@@ -220,6 +221,12 @@ func TestDelete(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	s, database := testStore(t)
+	if _, err := database.DB.Exec(`UPDATE renumber_control SET enabled = TRUE WHERE singleton`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec(`DELETE FROM renumber_control; INSERT INTO renumber_control (singleton, enabled, identity_cutover) VALUES (TRUE, FALSE, FALSE)`)
+	})
 	householdID := createTestHousehold(t, database)
 
 	l, err := s.Add(context.Background(), "6660001", "Original", householdID)
@@ -392,5 +399,68 @@ func TestAllSilentByHousehold(t *testing.T) {
 	got, _ = store.store.AllSilentByHousehold(ctx, store.householdID)
 	if !got {
 		t.Error("expected true when all lines are silent")
+	}
+}
+
+func TestUpdateNameDoesNotOverwriteConcurrentNumber(t *testing.T) {
+	s, database := testStore(t)
+	householdID := createTestHousehold(t, database)
+	ln, err := s.Add(context.Background(), "7650001", "old", householdID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.DB.Exec(`UPDATE renumber_control SET enabled = TRUE WHERE singleton`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec(`DELETE FROM renumber_control; INSERT INTO renumber_control (singleton, enabled, identity_cutover) VALUES (TRUE, FALSE, FALSE)`)
+	})
+	if _, err := database.DB.Exec(`UPDATE lines SET number = '7650002' WHERE id = $1`, ln.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateName(context.Background(), ln.ID, "new name"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetByID(context.Background(), ln.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Number != "7650002" {
+		t.Fatalf("name update reverted number to %s", got.Number)
+	}
+	if got.Name != "new name" {
+		t.Fatalf("name = %q", got.Name)
+	}
+}
+
+func TestEffectiveSettingsForLineRejectsReusedNumber(t *testing.T) {
+	s, database := testStore(t)
+	firstHousehold := createTestHousehold(t, database)
+	secondHousehold := createTestHousehold(t, database)
+	if _, err := database.DB.Exec(`UPDATE renumber_control SET enabled = TRUE, updated_at = NOW() WHERE singleton`); err != nil {
+		t.Fatalf("enable renumber gate: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec(`DELETE FROM renumber_control; INSERT INTO renumber_control (singleton, enabled, identity_cutover) VALUES (TRUE, FALSE, FALSE)`)
+	})
+	const reused = "5554242"
+
+	first, err := s.Add(context.Background(), reused, "First", firstHousehold)
+	if err != nil {
+		t.Fatalf("add first line: %v", err)
+	}
+	if _, err := database.DB.Exec(`UPDATE lines SET number = $1 WHERE id = $2`, "5554343", first.ID); err != nil {
+		t.Fatalf("renumber first line: %v", err)
+	}
+	second, err := s.Add(context.Background(), reused, "Second", secondHousehold)
+	if err != nil {
+		t.Fatalf("reuse number: %v", err)
+	}
+
+	if _, err := s.EffectiveSettingsForLine(context.Background(), reused, first.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale identity error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.EffectiveSettingsForLine(context.Background(), reused, second.ID); err != nil {
+		t.Fatalf("current identity lookup: %v", err)
 	}
 }

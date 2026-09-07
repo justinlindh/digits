@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/updates"
 )
 
@@ -24,13 +25,11 @@ type changelogData struct {
 
 func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 	hh := h.activeHousehold(r)
-	var lines []string
+	var lines []line.Line
 	if hh != nil && h.lineStore != nil {
 		ll, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 		if err == nil {
-			for _, l := range ll {
-				lines = append(lines, l.Number)
-			}
+			lines = ll
 		} else {
 			slog.ErrorContext(r.Context(), "changelog: list lines failed", "household_id", hh.ID, "err", err)
 		}
@@ -51,14 +50,14 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 	renderWith(r.Context(), w, h.tmplChangelog, "changelog-content", data)
 }
 
-func (h *Handler) buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []string) []changelogRelease {
+func (h *Handler) buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []line.Line) []changelogRelease {
 	releases := idx.SortedReleases(component)
 	out := make([]changelogRelease, 0, len(releases))
 
 	var totalDevices int
 	versionCounts := make(map[string]int)
-	for _, number := range lines {
-		infos := h.hub.AllDeviceInfo(number)
+	for _, line := range lines {
+		infos := h.hub.AllDeviceInfoForLine(line.Number, line.ID)
 		for _, info := range infos {
 			var ver string
 			switch component {

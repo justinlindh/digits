@@ -3,6 +3,7 @@
 package calls_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -31,4 +32,16 @@ func openTestDB(t *testing.T) *db.Database {
 		_ = d.Close()
 	})
 	return d
+}
+
+func setRenumberEnabled(t *testing.T, d *db.Database, enabled bool) {
+	t.Helper()
+	if _, err := d.DB.ExecContext(context.Background(),
+		`UPDATE renumber_control SET enabled = $1, updated_at = NOW() WHERE singleton`, enabled); err != nil {
+		t.Fatalf("set renumber gate to %t: %v", enabled, err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.DB.ExecContext(context.Background(),
+			`DELETE FROM renumber_control; INSERT INTO renumber_control (singleton, enabled, identity_cutover) VALUES (TRUE, FALSE, FALSE)`)
+	})
 }

@@ -234,6 +234,17 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 // cascades to the remaining pair), and fans out a DisconnectKind event
 // to observer SSE streams.
 func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
+	err := h.lineStore.WithRenumberReadFence(r.Context(), func(context.Context) error {
+		h.handleConferenceKickFenced(w, r)
+		return nil
+	})
+	if err != nil {
+		slog.ErrorContext(r.Context(), "renumber read fence failed", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleConferenceKickFenced(w http.ResponseWriter, r *http.Request) {
 	confID, ok := parseConfID(w, r)
 	if !ok {
 		return
