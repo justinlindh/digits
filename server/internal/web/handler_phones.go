@@ -612,6 +612,11 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The change is committed; the rest must run to completion even if the
+	// admin's browser has gone away, or a revert could be cancelled and the
+	// phones left answering as the old number.
+	ctx = context.WithoutCancel(ctx)
+
 	// The busy check above and the update are not atomic: a call can start
 	// on the old number in between, and the socket close below would drop
 	// it. Now that the update is committed the old number is no longer a
@@ -1251,9 +1256,12 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		dev = &devices[0]
 	}
 
-	// Move the device.
-	if err := h.deviceStore.Reassign(r.Context(), dev.ID, targetLineID); err != nil {
-		slog.ErrorContext(r.Context(), "move device failed", "device_id", dev.ID, "target", targetLineID, "err", err)
+	// Move the device. From here on the work runs to completion even if the
+	// admin's browser has gone away: a cancelled revert would leave the
+	// handset moved but its socket still answering on the source line.
+	ctx := context.WithoutCancel(r.Context())
+	if err := h.deviceStore.Reassign(ctx, dev.ID, targetLineID); err != nil {
+		slog.ErrorContext(ctx, "move device failed", "device_id", dev.ID, "target", targetLineID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -1262,13 +1270,13 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	// source line between the busy check and the move. Hand the handset
 	// back rather than close a socket that is carrying a call. If the
 	// revert itself fails the move stands, so fall through and close.
-	if h.lineBusy(r.Context(), number) {
-		err := h.deviceStore.Reassign(r.Context(), dev.ID, srcLn.ID)
+	if h.lineBusy(ctx, number) {
+		err := h.deviceStore.Reassign(ctx, dev.ID, srcLn.ID)
 		if err == nil {
 			rejectBusy()
 			return
 		}
-		slog.ErrorContext(r.Context(), "move device revert after busy recheck failed, closing socket", "device_id", dev.ID, "err", err)
+		slog.ErrorContext(ctx, "move device revert after busy recheck failed, closing socket", "device_id", dev.ID, "err", err)
 	}
 
 	// The handset's socket, if connected, is still registered under the
@@ -1279,15 +1287,15 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		Number: tgtLn.Number,
 	})
 
-	remaining, err := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	remaining, err := h.deviceStore.ListByLine(ctx, srcLn.ID)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "list remaining devices failed", "line_id", srcLn.ID, "err", err)
+		slog.ErrorContext(ctx, "list remaining devices failed", "line_id", srcLn.ID, "err", err)
 		http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 		return
 	}
 	if len(remaining) == 0 {
-		if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
-			slog.ErrorContext(r.Context(), "delete empty line failed", "line_id", srcLn.ID, "err", err)
+		if err := h.lineStore.Delete(ctx, srcLn.ID); err != nil {
+			slog.ErrorContext(ctx, "delete empty line failed", "line_id", srcLn.ID, "err", err)
 		}
 		http.Redirect(w, r, "/phones", http.StatusSeeOther)
 		return

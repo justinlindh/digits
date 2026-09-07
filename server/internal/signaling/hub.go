@@ -520,19 +520,18 @@ func (h *Hub) CloseLine(number string, farewell *Message) {
 	}
 }
 
-// CloseHardware ends the single connection for hardwareID, wherever it is
-// terminated, sending farewell first when it is non-nil. Like SendToHardware
-// it publishes only when the connection is not local, since a device holds
-// one connection cluster-wide.
+// CloseHardware ends the connection for hardwareID on this pod and (via
+// Redis) on every other pod, sending farewell first when it is non-nil.
+// Unlike SendToHardware it publishes even when a local connection exists:
+// a device that just reconnected to another pod can still have its dying
+// socket registered here, and the point is that the live one ends too.
 func (h *Hub) CloseHardware(hardwareID string, farewell *Message) {
 	data, err := marshalOptional(farewell)
 	if err != nil {
 		slog.Error("CloseHardware: marshal farewell failed", "hardware_id", hardwareID, "err", err)
 		return
 	}
-	if h.closeLocalHardware(hardwareID, data) {
-		return
-	}
+	h.closeLocalHardware(hardwareID, data)
 
 	h.mu.RLock()
 	bridge := h.redis
@@ -561,16 +560,13 @@ func (h *Hub) closeLocalLine(number string, farewell []byte) {
 }
 
 // closeLocalHardware queues farewell (when non-nil) then the close sentinel
-// on the local connection for hardwareID, reporting whether there was one.
-func (h *Hub) closeLocalHardware(hardwareID string, farewell []byte) bool {
+// on the local connection for hardwareID, if there is one.
+func (h *Hub) closeLocalHardware(hardwareID string, farewell []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	conn := h.hwConns[hardwareID]
-	if conn == nil {
-		return false
+	if conn := h.hwConns[hardwareID]; conn != nil {
+		h.closeConn(conn, farewell)
 	}
-	h.closeConn(conn, farewell)
-	return true
 }
 
 // closeConn queues farewell (when non-nil) then the nil close sentinel on

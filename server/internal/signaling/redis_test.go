@@ -291,29 +291,30 @@ func TestDeliverFromRedisClosesLocalLine(t *testing.T) {
 
 // CloseHardware publishes a "close_hardware" envelope only when the device
 // is not connected here, mirroring SendToHardware: one device, one socket.
-func TestCloseHardwarePublishesOnlyWhenNotLocal(t *testing.T) {
+func TestCloseHardwarePublishesEvenWhenLocal(t *testing.T) {
 	hub := NewHub()
 	fake := newFakeRedis()
 	hub.SetRedis(fake)
 	conn := &Conn{HardwareID: "hw-a", Send: make(chan []byte, 8)}
 	_ = hub.Register("3140001", conn)
 
-	hub.CloseHardware("hw-a", nil)
-	if n := len(fake.publishedEnvelopes()); n != 0 {
-		t.Fatalf("local device closed but %d envelopes published, want 0", n)
-	}
-	assertSentinelOnly(t, conn)
-
-	hub.CloseHardware("hw-elsewhere", &Message{Type: TypeLineRenumber, Number: "3140009"})
+	hub.CloseHardware("hw-a", &Message{Type: TypeLineRenumber, Number: "3140009"})
+	assertFarewellThenSentinel(t, conn, "3140009")
 	envs := fake.publishedEnvelopes()
 	if len(envs) != 1 {
 		t.Fatalf("published %d envelopes, want 1", len(envs))
 	}
-	if envs[0].TargetType != "close_hardware" || envs[0].Target != "hw-elsewhere" {
-		t.Errorf("envelope = %s/%s, want close_hardware/hw-elsewhere", envs[0].TargetType, envs[0].Target)
+	if envs[0].TargetType != "close_hardware" || envs[0].Target != "hw-a" {
+		t.Errorf("envelope = %s/%s, want close_hardware/hw-a", envs[0].TargetType, envs[0].Target)
 	}
 	if envs[0].Message == nil || envs[0].Message.Number != "3140009" {
 		t.Errorf("envelope must carry the farewell message, got %+v", envs[0].Message)
+	}
+
+	hub.CloseHardware("hw-elsewhere", nil)
+	envs = fake.publishedEnvelopes()
+	if len(envs) != 2 || envs[1].Target != "hw-elsewhere" || envs[1].Message != nil {
+		t.Fatalf("bare close for a remote device should publish a nil-message envelope, got %+v", envs)
 	}
 }
 
