@@ -1290,6 +1290,9 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(remaining) == 0 {
+		// Nothing else can be registered under the source number: register
+		// requires a paired device row, and the moved handset held the last
+		// one.
 		if err := h.lineStore.Delete(ctx, srcLn.ID); err != nil {
 			slog.ErrorContext(ctx, "delete empty line failed", "line_id", srcLn.ID, "err", err)
 		}

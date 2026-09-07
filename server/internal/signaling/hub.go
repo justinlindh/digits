@@ -39,7 +39,9 @@ var ErrDraining = errors.New("hub is draining")
 // The Send channel is the only safe write path; all outbound messages are
 // queued here and delivered by the per-connection write pump goroutine. A nil
 // element is the close sentinel: the pump delivers everything queued before
-// it, then closes the socket (see CloseLine).
+// it, then closes the socket (queued by closeConn for CloseLine and
+// CloseHardware; Register closes the channel outright when it evicts a
+// connection).
 type Conn struct {
 	WS         *websocket.Conn
 	Number     string
@@ -589,7 +591,7 @@ const (
 // retryClose keeps re-offering the close sentinel to a connection whose
 // buffer was full until it fits or the connection has unregistered; past
 // closeRetryTimeout the socket is closed outright so the read loop still
-// unwinds.
+// unwinds, which drops whatever is still queued and counts as a drop.
 func (h *Hub) retryClose(conn *Conn) {
 	deadline := time.Now().Add(closeRetryTimeout)
 	interval := sendRetryInterval
@@ -602,6 +604,12 @@ func (h *Hub) retryClose(conn *Conn) {
 	}
 	slog.Warn("close: send buffer still full, closing socket",
 		"number", conn.Number, "hardware_id", conn.HardwareID)
+	h.mu.RLock()
+	dropHook := h.dropHook
+	h.mu.RUnlock()
+	if dropHook != nil {
+		dropHook()
+	}
 	if conn.WS != nil {
 		_ = conn.WS.Close()
 	}
