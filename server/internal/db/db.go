@@ -7,12 +7,12 @@ package db
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/justinlindh/digits/server/internal/dbutil"
 	"github.com/justinlindh/digits/server/internal/tracing"
 )
 
@@ -57,10 +57,9 @@ func (d *Database) Close() error {
 
 // migrationLockKey is the pg_advisory_xact_lock key that serializes
 // migration runners across processes sharing one database.
-const migrationLockKey = 0x6469676974730001 // "digits" + 1
+const migrationLockKey = 0x6469676974730001
 
-// migration is one schema version: a SQL script applied exactly once per
-// database, inside its own transaction, and recorded in schema_version.
+// migration is one entry in migrations.
 type migration struct {
 	version int
 	sql     string
@@ -121,47 +120,34 @@ func (d *Database) appliedVersions(ctx context.Context) (map[int]bool, error) {
 
 // locked runs fn inside a transaction that holds the migration advisory
 // lock, committing if fn returns nil.
-func (d *Database) locked(ctx context.Context, fn func(tx *sql.Tx) error) (err error) {
-	tx, err := d.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) && err == nil {
-			err = rbErr
+func (d *Database) locked(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	return dbutil.WithTx(ctx, d.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockKey); err != nil {
+			return fmt.Errorf("advisory lock: %w", err)
 		}
-	}()
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockKey); err != nil {
-		return fmt.Errorf("advisory lock: %w", err)
-	}
-	if err := fn(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+		return fn(tx)
+	})
 }
 
 func (d *Database) apply(ctx context.Context, m migration) error {
 	return d.locked(ctx, func(tx *sql.Tx) error {
-		// Re-check under the lock: another starter may have applied this
-		// version while we waited.
-		var already bool
-		if err := tx.QueryRowContext(ctx,
-			`SELECT EXISTS (SELECT 1 FROM schema_version WHERE version = $1)`, m.version,
-		).Scan(&already); err != nil {
-			return fmt.Errorf("check schema_version: %w", err)
+		// Claim the version under the lock; a conflict means another
+		// starter applied it while we waited. The row only becomes visible
+		// once the script below commits with it.
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING`, m.version)
+		if err != nil {
+			return fmt.Errorf("record schema_version: %w", err)
 		}
-		if already {
+		if n, err := res.RowsAffected(); err != nil {
+			return err
+		} else if n == 0 {
 			return nil
 		}
 		// No bind parameters: lib/pq then uses the simple query protocol,
 		// which accepts the multi-statement scripts below.
-		if _, err := tx.ExecContext(ctx, m.sql); err != nil {
-			return fmt.Errorf("%w\nSQL: %s", err, m.sql)
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_version (version) VALUES ($1)`, m.version); err != nil {
-			return fmt.Errorf("record schema_version: %w", err)
-		}
-		return nil
+		_, err = tx.ExecContext(ctx, m.sql)
+		return err
 	})
 }
 

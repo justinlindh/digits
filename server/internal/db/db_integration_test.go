@@ -50,23 +50,10 @@ func mustOpen(t *testing.T, dsn string) {
 	_ = d.Close()
 }
 
-// TestMigrateIsIdempotent locks the core contract: opening an already
-// migrated database must be a no-op, not an error.
-func TestMigrateIsIdempotent(t *testing.T) {
-	dsn := testDSN(t)
-	resetSchema(t, rawDB(t, dsn))
-	mustOpen(t, dsn)
-	mustOpen(t, dsn)
-}
-
-// TestMigrateRecordsEveryVersion: a fresh database ends up with every
-// version in the migrations list recorded, so nothing re-runs on the next
-// start.
-func TestMigrateRecordsEveryVersion(t *testing.T) {
-	dsn := testDSN(t)
-	raw := rawDB(t, dsn)
-	resetSchema(t, raw)
-	mustOpen(t, dsn)
+// assertAllVersionsRecorded checks that every entry in migrations is in
+// schema_version, so nothing re-runs on the next start.
+func assertAllVersionsRecorded(t *testing.T, raw *sql.DB) {
+	t.Helper()
 	d := &Database{DB: raw}
 	applied, err := d.appliedVersions(context.Background())
 	if err != nil {
@@ -77,6 +64,23 @@ func TestMigrateRecordsEveryVersion(t *testing.T) {
 			t.Errorf("version %d not recorded in schema_version", m.version)
 		}
 	}
+}
+
+// TestMigrateIsIdempotent locks the core contract: opening an already
+// migrated database must be a no-op, not an error.
+func TestMigrateIsIdempotent(t *testing.T) {
+	dsn := testDSN(t)
+	resetSchema(t, rawDB(t, dsn))
+	mustOpen(t, dsn)
+	mustOpen(t, dsn)
+}
+
+func TestMigrateRecordsEveryVersion(t *testing.T) {
+	dsn := testDSN(t)
+	raw := rawDB(t, dsn)
+	resetSchema(t, raw)
+	mustOpen(t, dsn)
+	assertAllVersionsRecorded(t, raw)
 }
 
 // TestMigrateAdoptsLegacyDatabase: a database migrated before versions
@@ -92,14 +96,7 @@ func TestMigrateAdoptsLegacyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustOpen(t, dsn)
-	var missing int
-	if err := raw.QueryRow(`SELECT count(*) FROM generate_series(1, 31) v
-		WHERE v <> 24 AND NOT EXISTS (SELECT 1 FROM schema_version WHERE version = v)`).Scan(&missing); err != nil {
-		t.Fatal(err)
-	}
-	if missing != 0 {
-		t.Fatalf("%d versions still unrecorded after adopting a legacy database", missing)
-	}
+	assertAllVersionsRecorded(t, raw)
 	var phones bool
 	if err := raw.QueryRow(`SELECT to_regclass('phones') IS NOT NULL`).Scan(&phones); err != nil {
 		t.Fatal(err)
@@ -116,26 +113,20 @@ func TestMigrateConcurrentStarts(t *testing.T) {
 	dsn := testDSN(t)
 	raw := rawDB(t, dsn)
 	openN := func(label string) {
-		const n = 3
 		var wg sync.WaitGroup
-		errs := make([]error, n)
-		for i := range errs {
+		for i := range 3 {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				d, err := Open(dsn)
-				if d != nil {
-					_ = d.Close()
+				if err != nil {
+					t.Errorf("%s: concurrent Open %d: %v", label, i, err)
+					return
 				}
-				errs[i] = err
+				_ = d.Close()
 			}()
 		}
 		wg.Wait()
-		for i, err := range errs {
-			if err != nil {
-				t.Errorf("%s: concurrent Open %d: %v", label, i, err)
-			}
-		}
 	}
 	for range 3 {
 		resetSchema(t, raw)
@@ -156,13 +147,7 @@ func TestMigrateSteadyStateTakesNoTableLocks(t *testing.T) {
 	resetSchema(t, raw)
 	mustOpen(t, dsn)
 
-	ctx := context.Background()
-	holder, err := raw.Conn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = holder.Close() }()
-	tx, err := holder.BeginTx(ctx, nil)
+	tx, err := raw.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +169,7 @@ func TestMigrateSteadyStateTakesNoTableLocks(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		d, err := Open(dsn)
-		if d != nil {
+		if err == nil {
 			_ = d.Close()
 		}
 		done <- err
