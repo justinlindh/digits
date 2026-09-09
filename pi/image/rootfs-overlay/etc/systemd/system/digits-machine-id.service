@@ -1,0 +1,14 @@
+[Unit]
+Description=Digits machine-id persistence and journal pruning
+Documentation=https://github.com/justinlindh/digits
+# Needs / and /data (bind-mounted to /var/log) mounted. Ordered before the
+# other units that flip the rootfs rw/ro so the remounts never interleave.
+After=local-fs.target
+Before=digits-first-boot.service digitsd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/digits-machine-id
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=digits-machine-id

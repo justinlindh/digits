@@ -1,0 +1,53 @@
+#!/bin/bash
+# Persist the machine-id and prune orphaned journal directories.
+#
+# The rootfs ships with an empty /etc/machine-id and mounts read-only, so
+# systemd cannot commit the ID it generates at boot: it mounts a transient one
+# on tmpfs instead and every boot gets a fresh ID. journald keys its directory
+# under /var/log/journal on the machine-id and only vacuums the current one,
+# so each boot strands the previous boot's journal on /data forever.
+#
+# Runs as root: from digits-machine-id.service at boot, and via sudo from
+# digitsd right after asset extraction so an updated device does not wait
+# for its next reboot.
+set -uo pipefail
+
+JOURNAL_DIR=/var/log/journal
+
+remount_ro() {
+    local attempt
+    for attempt in 1 2 3; do
+        sync
+        if mount -o remount,ro /; then
+            return 0
+        fi
+        echo "remount ro failed (attempt $attempt)" >&2
+        sleep 1
+    done
+    return 1
+}
+
+if mountpoint -q /etc/machine-id; then
+    if mount -o remount,rw /; then
+        if systemd-machine-id-setup --commit; then
+            echo "committed machine-id $(cat /etc/machine-id)"
+        else
+            echo "machine-id commit failed" >&2
+        fi
+        remount_ro || echo "rootfs left read-write" >&2
+    else
+        echo "remount rw failed, machine-id stays transient" >&2
+    fi
+fi
+
+# Journals of other machine-ids are unreachable through journalctl and never
+# vacuumed; drop them.
+current=$(cat /etc/machine-id)
+for dir in "$JOURNAL_DIR"/*/; do
+    [ -d "$dir" ] || continue
+    name=$(basename "$dir")
+    [ "$name" = "$current" ] && continue
+    [[ "$name" =~ ^[0-9a-f]{32}$ ]] || continue
+    echo "pruning orphaned journal $name ($(du -sm "$dir" | cut -f1) MB)"
+    rm -rf "$dir"
+done

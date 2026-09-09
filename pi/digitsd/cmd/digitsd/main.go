@@ -1275,6 +1275,12 @@ func main() {
 		slog.Warn("asset extraction failed", "err", err)
 	}
 
+	// Persist the machine-id and prune orphaned journals now instead of at
+	// the next reboot. The unit runs at every boot as well.
+	if out, err := exec.Command("sudo", "-n", "systemctl", "start", "digits-machine-id.service").CombinedOutput(); err != nil {
+		slog.Warn("digits-machine-id start failed", "err", err, "output", strings.TrimSpace(string(out)))
+	}
+
 	// Render the active SWD config from the per-variant file matching this
 	// hardware. /etc/digits-pcb-rev is stamped by build-image.sh and is the
 	// single source of truth for which fab revision this image targets.
