@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -549,5 +550,19 @@ func TestVersionIsNewer(t *testing.T) {
 		if got := versionIsNewer(c.candidate, c.current); got != c.want {
 			t.Errorf("versionIsNewer(%q, %q) = %v, want %v", c.candidate, c.current, got, c.want)
 		}
+	}
+}
+
+func TestResolveTargetRelease_NotInIndex(t *testing.T) {
+	comp := ComponentIndex{
+		Latest:   "1.44.13",
+		Releases: map[string]*Release{"1.44.13": {Version: "1.44.13"}},
+	}
+	_, err := resolveTargetRelease("pi", "1.44.14", "1.44.13", comp)
+	if !errors.Is(err, ErrNotInIndex) {
+		t.Fatalf("explicit target missing from index: err=%v, want ErrNotInIndex", err)
+	}
+	if rel, err := resolveTargetRelease("pi", "", "1.44.13", comp); err != nil || rel != nil {
+		t.Fatalf("implicit latest equal to current: rel=%v err=%v, want nil, nil", rel, err)
 	}
 }

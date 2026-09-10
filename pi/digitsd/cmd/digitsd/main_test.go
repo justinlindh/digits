@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
+	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
 )
 
@@ -539,5 +541,34 @@ func TestLineSettingsVoicemailConversion(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("voicemail wire->config: got %+v, want %+v", got, want)
+	}
+}
+
+func TestRetryWhileNotIndexed(t *testing.T) {
+	stale := fmt.Errorf("pi version 1.44.14: %w", updater.ErrNotInIndex)
+
+	calls := 0
+	err := retryWhileNotIndexed(6, 0, func() error {
+		calls++
+		if calls < 3 {
+			return stale
+		}
+		return nil
+	})
+	if err != nil || calls != 3 {
+		t.Fatalf("index refreshed on third try: err=%v calls=%d, want nil, 3", err, calls)
+	}
+
+	calls = 0
+	err = retryWhileNotIndexed(4, 0, func() error { calls++; return stale })
+	if !errors.Is(err, updater.ErrNotInIndex) || calls != 4 {
+		t.Fatalf("index never refreshed: err=%v calls=%d, want ErrNotInIndex after 4", err, calls)
+	}
+
+	calls = 0
+	other := errors.New("download failed")
+	err = retryWhileNotIndexed(4, 0, func() error { calls++; return other })
+	if !errors.Is(err, other) || calls != 1 {
+		t.Fatalf("unrelated error: err=%v calls=%d, want immediate return", err, calls)
 	}
 }

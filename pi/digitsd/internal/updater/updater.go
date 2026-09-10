@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -185,6 +186,12 @@ func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) 
 	return result, nil
 }
 
+// ErrNotInIndex reports an explicit target version the release index does not
+// list. Server replicas refresh their index on independent timers, so a device
+// pushed a new release can fetch the index from a replica that has not seen
+// it yet.
+var ErrNotInIndex = errors.New("version not in release index")
+
 // resolveTargetRelease picks the release a component should move to. An empty
 // target means "use the component's Latest". Returns (nil, nil) when no update
 // is needed (no target known, or the resolved target equals current). Returns
@@ -207,7 +214,7 @@ func resolveTargetRelease(label, target, current string, comp ComponentIndex) (*
 	}
 	rel, ok := comp.Releases[target]
 	if !ok {
-		return nil, fmt.Errorf("%s version %s not found in release index", label, target)
+		return nil, fmt.Errorf("%s version %s: %w", label, target, ErrNotInIndex)
 	}
 	if _, err := normalizeSHA256(rel.SHA256); err != nil {
 		return nil, fmt.Errorf("%s version %s has invalid sha256: %w", label, target, err)
