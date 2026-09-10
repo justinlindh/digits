@@ -23,14 +23,18 @@ remount_ro() {
     return 1
 }
 
+rc=0
 if mountpoint -q /etc/machine-id && mount -o remount,rw /; then
     systemd-machine-id-setup --commit || echo "machine-id commit failed" >&2
-    remount_ro || echo "rootfs left read-write" >&2
+    # Exit non-zero so the unit shows as failed rather than hiding a
+    # writable rootfs behind one log line.
+    remount_ro || { echo "rootfs left read-write" >&2; rc=1; }
 fi
 
 # Journals of other machine-ids are unreachable through journalctl and never
 # vacuumed; drop them.
 read -r current < /etc/machine-id
+[[ "$current" =~ ^[0-9a-f]{32}$ ]] || { echo "no valid machine-id, skipping journal prune" >&2; exit 1; }
 for dir in /var/log/journal/*/; do
     name=${dir%/}
     name=${name##*/}
@@ -39,3 +43,4 @@ for dir in /var/log/journal/*/; do
     echo "pruning orphaned journal $name"
     rm -rf "$dir"
 done
+exit $rc
