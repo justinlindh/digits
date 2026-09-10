@@ -612,12 +612,20 @@ chroot "$ROOTFS_MNT" /bin/bash -s -- "${PURGE_PACKAGES[@]}" <<'CHROOT'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 list=$(for p in "$@"; do dpkg-query -W -f='${Package}\n' "$p" 2>/dev/null || true; done | sort -u)
+converged=
 for _ in $(seq 1 40); do
+    if [ -z "$list" ]; then
+        converged=1
+        break
+    fi
     mapfile -t pkgs <<<"$list"
     if out=$(apt-get -o Debug::pkgProblemResolver=yes --dry-run purge -y --auto-remove "${pkgs[@]}" 2>&1); then
+        converged=1
         break
     fi
     # "Broken KEEPER Depends on PKG" where KEEPER stays and PKG is listed.
+    # This is apt's Debug::pkgProblemResolver wording; if a base image's apt
+    # changes it, keep comes back empty and the build stops below.
     keep=$(sed -nE 's/^Broken ([^: ]+):[a-z0-9]+ (Pre)?Depends on ([^: ]+):.*/\1 \3/p' <<<"$out" | while read -r keeper dep; do
         if ! grep -qx "$keeper" <<<"$list" && grep -qx "$dep" <<<"$list"; then
             echo "$dep"
@@ -631,9 +639,14 @@ for _ in $(seq 1 40); do
     echo "purge: holding back (required by packages that stay): $(tr '\n' ' ' <<<"$keep")"
     list=$(comm -23 <(echo "$list") <(echo "$keep"))
 done
-echo "purge: removing $(grep -cE '^(Purg|Remv)' <<<"$out") packages"
-mapfile -t pkgs <<<"$list"
-apt-get purge -y --auto-remove "${pkgs[@]}"
+[ -n "$converged" ] || { echo "purge: resolver did not converge in 40 rounds" >&2; exit 1; }
+if [ -z "$list" ]; then
+    echo "purge: nothing to remove"
+else
+    echo "purge: removing $(grep -cE '^(Purg|Remv)' <<<"$out") packages"
+    mapfile -t pkgs <<<"$list"
+    apt-get purge -y --auto-remove "${pkgs[@]}"
+fi
 apt-get autoremove -y
 apt-get clean
 rm -f /etc/ssh/sshd_config.d/rename_user.conf
