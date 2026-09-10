@@ -566,6 +566,13 @@ func TestRetryWhileNotIndexed(t *testing.T) {
 	}
 
 	calls = 0
+	start := time.Now()
+	err = retryWhileNotIndexed(3, 50*time.Millisecond, func() error { calls++; return stale })
+	if !errors.Is(err, updater.ErrNotInIndex) || calls != 3 || time.Since(start) >= 150*time.Millisecond {
+		t.Fatalf("no sleep after the last attempt: err=%v calls=%d elapsed=%v", err, calls, time.Since(start))
+	}
+
+	calls = 0
 	other := errors.New("download failed")
 	err = retryWhileNotIndexed(4, 0, func() error { calls++; return other })
 	if !errors.Is(err, other) || calls != 1 {

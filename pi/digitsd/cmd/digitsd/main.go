@@ -804,11 +804,17 @@ func retryWhileNotIndexed(attempts int, delay time.Duration, run func() error) e
 		if err = run(); !errors.Is(err, updater.ErrNotInIndex) {
 			return err
 		}
-		slog.Info("auto-update: release index not refreshed yet, retrying", "attempt", i+1, "delay", delay)
-		time.Sleep(delay)
+		if i < attempts-1 {
+			slog.Info("auto-update: release index not refreshed yet, retrying", "attempt", i+1, "delay", delay)
+			time.Sleep(delay)
+		}
 	}
 	return err
 }
+
+// errUpdateInProgress reports a run that yielded to another update already
+// running, so the caller does not mistake it for a completed one.
+var errUpdateInProgress = errors.New("another update is already in progress")
 
 // runAutoUpdate checks whether the device is idle (no active call) and, if so,
 // delegates to runTargetedUpdate with empty targets (install whatever is
@@ -841,7 +847,7 @@ func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, f
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) error {
 	if !updateInProgress.CompareAndSwap(false, true) {
 		slog.Info("updater: skipping -- another update is already in progress")
-		return nil
+		return errUpdateInProgress
 	}
 	defer updateInProgress.Store(false)
 	// When a specific component is targeted, don't auto-upgrade the other.
