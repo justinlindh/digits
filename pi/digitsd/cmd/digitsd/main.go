@@ -1275,10 +1275,10 @@ func main() {
 		slog.Warn("asset extraction failed", "err", err)
 	}
 
-	// Persist the machine-id and prune orphaned journals now instead of at
-	// the next reboot. The unit runs at every boot as well.
-	if out, err := exec.Command("sudo", "-n", "systemctl", "start", "digits-machine-id.service").CombinedOutput(); err != nil {
-		slog.Warn("digits-machine-id start failed", "err", err, "output", strings.TrimSpace(string(out)))
+	// Boot maintenance normally runs before digitsd; this catches the boot
+	// on which asset extraction first installed the unit.
+	if err := exec.Command("sudo", "systemctl", "start", "digits-machine-id.service").Run(); err != nil {
+		slog.Warn("digits-machine-id start failed", "err", err)
 	}
 
 	// Render the active SWD config from the per-variant file matching this

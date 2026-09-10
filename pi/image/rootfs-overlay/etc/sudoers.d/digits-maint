@@ -1,3 +1,2 @@
-# Let digitsd run boot maintenance right after asset extraction so a freshly
-# updated device does not wait for its next reboot.
+# digitsd starts boot maintenance right after asset extraction.
 digits ALL=(root) NOPASSWD: /usr/bin/systemctl start digits-machine-id.service
