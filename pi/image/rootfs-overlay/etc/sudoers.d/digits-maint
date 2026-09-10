@@ -1,0 +1,2 @@
+# digitsd starts boot maintenance right after asset extraction.
+digits ALL=(root) NOPASSWD: /usr/bin/systemctl start digits-machine-id.service

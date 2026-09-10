@@ -5,8 +5,8 @@ Documentation=https://github.com/justinlindh/digits
 # extractor flips the rootfs rw/ro mid-boot, which races with first-boot's
 # own rw remount and causes first-boot's writes to fail with EROFS.
 # Wants= (soft) so a permanently-broken first-boot does not strand digitsd.
-After=sound.target sysinit.target digits-first-boot.service
-Wants=digits-first-boot.service
+After=sound.target sysinit.target digits-machine-id.service digits-first-boot.service
+Wants=digits-machine-id.service digits-first-boot.service
 
 [Service]
 Type=simple

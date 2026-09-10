@@ -1275,6 +1275,12 @@ func main() {
 		slog.Warn("asset extraction failed", "err", err)
 	}
 
+	// Boot maintenance normally runs before digitsd; this catches the boot
+	// on which asset extraction first installed the unit.
+	if err := exec.Command("sudo", "systemctl", "start", "digits-machine-id.service").Run(); err != nil {
+		slog.Warn("digits-machine-id start failed", "err", err)
+	}
+
 	// Render the active SWD config from the per-variant file matching this
 	// hardware. /etc/digits-pcb-rev is stamped by build-image.sh and is the
 	// single source of truth for which fab revision this image targets.

@@ -1,0 +1,16 @@
+[Unit]
+Description=Digits machine-id persistence and journal pruning
+Documentation=https://github.com/justinlindh/digits
+# A transient (tmpfs) machine-id means the commit is still pending.
+ConditionPathIsMountPoint=/etc/machine-id
+# Needs / and /data (bind-mounted to /var/log) mounted; ordered after
+# first-boot so their rootfs rw/ro remounts never interleave.
+After=local-fs.target digits-first-boot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/digits-machine-id
+
+[Install]
+WantedBy=multi-user.target

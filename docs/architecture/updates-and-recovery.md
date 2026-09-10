@@ -107,6 +107,8 @@ The recovery binary and factory images live on the recovery partition and are ne
 
 The rootfs is mounted read-only at runtime. `digitsd` remounts it read-write only during asset extraction, then immediately remounts it read-only again.
 
+The rootfs image ships with an empty `/etc/machine-id`, and systemd cannot commit the ID it generates on a read-only root, so a fresh device boots with a transient ID. Left alone, every boot would strand its journal under `/var/log/journal` on `/data`, because journald only vacuums the directory of the current machine-id. `digits-machine-id.service` commits the running ID into the rootfs and prunes journals of other IDs; `digitsd` also starts it after asset extraction so already-deployed devices are fixed on update. A `journald.conf.d` drop-in caps the persistent journal at 100 MB.
+
 The recovery partition is never mounted during normal operation. The initramfs mounts it directly when recovery mode is triggered.
 
 ## Hardware Watchdog
