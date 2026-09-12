@@ -255,11 +255,14 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 			})
 		}
 		fwVersion, _ := d.getFirmwareVersion()
-		go runTargetedUpdate(d.serverURL, version.Version, fwVersion,
-			msg.TargetPiVersion, msg.TargetFWVersion, d.flashCapable.Load(), statusReporter, d.requeryFirmware)
+		go func() {
+			_ = runTargetedUpdate(d.serverURL, version.Version, fwVersion,
+				msg.TargetPiVersion, msg.TargetFWVersion, d.flashCapable.Load(), statusReporter, d.requeryFirmware)
+		}()
 
 	case sigclient.TypeReleaseAvailable:
 		slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
+		d.pushedRelease.Store(&pushedVersions{pi: msg.LatestPiVersion, fw: msg.LatestFWVersion})
 		if d.autoUpdateAllowed() {
 			go d.triggerAutoUpdate()
 		}

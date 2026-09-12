@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -159,6 +160,10 @@ type daemonCallbacks struct {
 	// captures the run()-scoped variables needed by runAutoUpdate.
 	autoUpdateEnabled atomic.Bool
 	pendingAutoUpdate atomic.Bool
+	// pushedRelease holds the versions from the last release_available push
+	// so the auto-update targets them explicitly and retries while a stale
+	// replica's index does not list them yet. Cleared once the update runs.
+	pushedRelease     atomic.Pointer[pushedVersions]
 	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
 
 	// Signaling-dispatch dependencies owned by the run loop and wired once
@@ -783,6 +788,34 @@ func triggerFactoryReset(sig *sigclient.Client, deviceID string) {
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
 
+type pushedVersions struct{ pi, fw string }
+
+// Release index retry budget: server replicas refresh their release cache
+// every five minutes, so six attempts a minute apart span one full refresh.
+const (
+	indexRetryAttempts = 6
+	indexRetryDelay    = time.Minute
+)
+
+// retryWhileNotIndexed reruns run while it reports updater.ErrNotInIndex.
+func retryWhileNotIndexed(attempts int, delay time.Duration, run func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		if err = run(); !errors.Is(err, updater.ErrNotInIndex) {
+			return err
+		}
+		if i < attempts-1 {
+			slog.Info("auto-update: release index not refreshed yet, retrying", "attempt", i+1, "delay", delay)
+			time.Sleep(delay)
+		}
+	}
+	return err
+}
+
+// errUpdateInProgress reports a run that yielded to another update already
+// running, so the caller does not mistake it for a completed one.
+var errUpdateInProgress = errors.New("another update is already in progress")
+
 // runAutoUpdate checks whether the device is idle (no active call) and, if so,
 // delegates to runTargetedUpdate with empty targets (install whatever is
 // latest). When a call is in progress the update is deferred: pendingAutoUpdate
@@ -799,13 +832,22 @@ func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, f
 	}
 
 	slog.Info("auto-update: device is idle, checking for updates")
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, nil, afterFirmwareUpdated)
+	targetPi, targetFW := "", ""
+	if p := d.pushedRelease.Load(); p != nil {
+		targetPi, targetFW = p.pi, p.fw
+	}
+	err := retryWhileNotIndexed(indexRetryAttempts, indexRetryDelay, func() error {
+		return runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW, flashCapable, nil, afterFirmwareUpdated)
+	})
+	if err == nil {
+		d.pushedRelease.Store(nil)
+	}
 }
 
-func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
+func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) error {
 	if !updateInProgress.CompareAndSwap(false, true) {
 		slog.Info("updater: skipping -- another update is already in progress")
-		return
+		return errUpdateInProgress
 	}
 	defer updateInProgress.Store(false)
 	// When a specific component is targeted, don't auto-upgrade the other.
@@ -831,7 +873,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 	if err != nil {
 		slog.Error("updater: check failed", "error", err)
 		reportStatus("failed", fmt.Sprintf("Check failed: %v", err))
-		return
+		return err
 	}
 	// When a specific component is targeted, suppress the other so we don't
 	// accidentally install firmware when the user only clicked "Install Pi Software".
@@ -847,7 +889,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 	if !result.PiAvailable && !result.FWAvailable {
 		slog.Info("updater: already up to date")
 		reportStatus("up_to_date", "Already running latest version")
-		return
+		return nil
 	}
 	slog.Info("updater: update available", "pi_available", result.PiAvailable, "pi_version", result.PiVersion, "fw_available", result.FWAvailable, "fw_version", result.FWVersion)
 
@@ -862,13 +904,13 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 			if err != nil {
 				slog.Error("updater: firmware download failed", "error", err)
 				reportStatus("failed", fmt.Sprintf("Firmware download failed: %v", err))
-				return
+				return err
 			}
 			reportStatus("applying", "Flashing firmware "+result.FWVersion)
 			if err := up.ApplyFirmwareUpdate(path); err != nil {
 				slog.Error("updater: firmware apply failed", "error", err)
 				reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
-				return
+				return err
 			}
 			if afterFirmwareUpdated != nil {
 				afterFirmwareUpdated()
@@ -881,13 +923,13 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		if err != nil {
 			slog.Error("updater: pi download failed", "error", err)
 			reportStatus("failed", fmt.Sprintf("Download failed: %v", err))
-			return
+			return err
 		}
 		reportStatus("rebooting", "Installing digitsd "+result.PiVersion+" -- restarting...")
 		if err := up.ApplyPiUpdate(path, result.PiVersion); err != nil {
 			slog.Error("updater: pi update failed", "error", err)
 			reportStatus("failed", fmt.Sprintf("Install failed: %v", err))
-			return
+			return err
 		}
 	}
 
@@ -899,6 +941,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 			reportStatus("up_to_date", "Pi is current; firmware update requires SWD wiring")
 		}
 	}
+	return nil
 }
 
 // picoStateResyncer is the subset of *phone.SerialPort that the Pico
@@ -1921,7 +1964,9 @@ func main() {
 	svcCodes.OnUpdate = func() {
 		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
 		fwVer, _ := cb.getFirmwareVersion()
-		go runTargetedUpdate(effectiveServerURL, version.Version, fwVer, "", "", flashCapable.Load(), nil, requeryFirmware)
+		go func() {
+			_ = runTargetedUpdate(effectiveServerURL, version.Version, fwVer, "", "", flashCapable.Load(), nil, requeryFirmware)
+		}()
 	}
 
 	// Wire auto-update. The closure reads fwVersion via the synchronized
