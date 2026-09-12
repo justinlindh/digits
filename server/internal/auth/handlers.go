@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -138,6 +139,10 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
 		h.observeLogin("magic_link", "failure")
+		if errors.Is(err, ErrAccountDisabled) {
+			http.Redirect(w, r, "/auth/login?error=account+disabled", http.StatusSeeOther)
+			return
+		}
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
@@ -186,6 +191,10 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 
 	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
+		if errors.Is(err, ErrAccountDisabled) {
+			http.Redirect(w, r, "/auth/login?error=account+disabled", http.StatusSeeOther)
+			return
+		}
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}

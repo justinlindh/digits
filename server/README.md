@@ -91,6 +91,7 @@ Visit `http://localhost:8443` for the web UI. New users are prompted to create a
 | `DATABASE_URL` | (required)                       | Postgres connection string            |
 | `BASE_URL`     | `https://app.digits.family`      | Public base URL for links and OAuth   |
 | `ADMIN_SECRET` | (required)                       | Shared secret for internal stats API  |
+| `ADMIN_EMAILS` | (empty)                          | Comma-separated account emails allowed to view the unlinked `/admin` page. Empty disables it. |
 | `SIGNALD_TRUSTED_PROXIES` | `1`                   | Reverse-proxy hops between signald and clients, used to resolve the real client IP from `X-Forwarded-For` for rate limiting. The default fits one proxy in front (Caddy or Traefik). Set to `0` when signald is exposed directly; raise it when another proxy (CDN, load balancer) sits in front of yours. |
 | `SIGNALD_WS_RATE_LIMIT` | `30`                  | WebSocket upgrade rate limit per client IP per minute. Raise it for load testing or when many devices share one egress IP. |
 
@@ -250,6 +251,8 @@ See `.env.example` for a starter config file.
 | `/api/status`           | Current call status                      |
 | `/api/active-calls`     | Active calls list                        |
 | `/internal/stats`       | Internal stats (requires `ADMIN_SECRET`) |
+| `/admin`                | Operator overview: accounts, households, devices, calls per day. Linked in the nav only for `ADMIN_EMAILS` users; 404 for everyone else. Privacy boundaries in `docs/admin.md` |
+| `/admin/accounts/{id}/disable`, `/enable` | POST. Disable signs the account out everywhere and blocks sign-in until enabled. Same gate as `/admin` |
 
 The UI uses htmx for partial updates and hand-written custom CSS for styling (`digits.css` plus per-theme overrides in `internal/web/static/`). Three themes ship: `intercom` (default), `dialup`, and `answering-machine`; the per-user choice lives on `users.theme`.
 

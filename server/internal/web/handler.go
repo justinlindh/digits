@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/justinlindh/digits/server/internal/admin"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/device"
@@ -213,7 +214,10 @@ type Handler struct {
 	tmplDashboardAMStatus    *template.Template
 	tmplChangelog            *template.Template
 	tmplActiveCalls          *template.Template
+	tmplAdmin                *template.Template
 	cfg                      HandlerConfig
+	// Admin
+	adminStore *admin.Store
 	// Auth
 	authStore    *auth.Store
 	authHandlers *auth.Handlers
@@ -250,6 +254,9 @@ type HandlerConfig struct {
 	BaseURL string
 	// AdminSecret gates /internal/stats. Empty disables the endpoint.
 	AdminSecret string
+	// AdminEmails lists the lowercased account emails allowed to view
+	// /admin. Empty disables the page: every request gets a 404.
+	AdminEmails []string
 	// DevMode enables development-only conveniences. Today that means
 	// serving /static/ from disk instead of the embedded FS, so CSS and
 	// JS edits don't require a signald rebuild. When false, the embedded
@@ -291,6 +298,9 @@ type Deps struct {
 	InviteStore    *household.InviteStore
 	Emailer        email.Sender
 	Metrics        *metrics.Registry
+	// AdminStore backs the /admin page. Nil renders the page with empty data;
+	// the page itself is gated by HandlerConfig.AdminEmails.
+	AdminStore *admin.Store
 	// RedisClient, when non-nil, backs the rate limiters with a shared counter
 	// so limits hold across replicas. Nil selects the per-process in-memory
 	// limiter, which is all dev and single-replica deployments need. This is a
@@ -400,6 +410,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	tmplConferenceLiveDetail := page("conference-live-detail.html", "_conference-live-panel.html")
 	tmplChangelog := fragment("changelog", "_partials.html", "_changelog.html")
 	tmplActiveCalls := fragment("active-calls", "_active-calls.html")
+	tmplAdmin := page("admin.html")
 	if perr != nil {
 		return nil, perr
 	}
@@ -460,7 +471,9 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplDashboardAMStatus:    tmplDashboardAMStatus,
 		tmplChangelog:            tmplChangelog,
 		tmplActiveCalls:          tmplActiveCalls,
+		tmplAdmin:                tmplAdmin,
 		cfg:                      cfg,
+		adminStore:               deps.AdminStore,
 		authStore:                deps.AuthStore,
 		authHandlers:             deps.AuthHandlers,
 		googleAuth:               deps.GoogleAuth,
@@ -590,6 +603,11 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/household/switch", h.handleHouseholdSwitchPost)
 	protected.HandleFunc("POST /settings/account/delete", h.handleAccountDeletePost)
 	protected.HandleFunc("GET /changelog", h.handleChangelog)
+	// Unlinked operator page. requireAdmin 404s for anyone not on the
+	// AdminEmails allowlist, including when the list is empty.
+	protected.Handle("GET /admin", h.requireAdmin(http.HandlerFunc(h.handleAdmin)))
+	protected.Handle("POST /admin/accounts/{id}/disable", h.requireAdmin(http.HandlerFunc(h.handleAdminAccountDisable)))
+	protected.Handle("POST /admin/accounts/{id}/enable", h.requireAdmin(http.HandlerFunc(h.handleAdminAccountEnable)))
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
