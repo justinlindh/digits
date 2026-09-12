@@ -606,6 +606,8 @@ func (h *Handler) Router() http.Handler {
 	// Unlinked operator page. requireAdmin 404s for anyone not on the
 	// AdminEmails allowlist, including when the list is empty.
 	protected.Handle("GET /admin", h.requireAdmin(http.HandlerFunc(h.handleAdmin)))
+	protected.Handle("POST /admin/accounts/{id}/disable", h.requireAdmin(http.HandlerFunc(h.handleAdminAccountDisable)))
+	protected.Handle("POST /admin/accounts/{id}/enable", h.requireAdmin(http.HandlerFunc(h.handleAdminAccountEnable)))
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)

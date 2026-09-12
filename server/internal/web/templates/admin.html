@@ -131,8 +131,10 @@
             <th>Email</th>
             <th>Name</th>
             <th>Households</th>
+            <th>Status</th>
             <th class="r">Created</th>
             <th class="r">Last login</th>
+            <th class="r"></th>
           </tr>
         </thead>
         <tbody>
@@ -141,8 +143,25 @@
             <td style="color: var(--ink); white-space: nowrap;">{{.Email}}</td>
             <td style="white-space: nowrap;">{{if .Name}}{{.Name}}{{else}}<span class="muted">&ndash;</span>{{end}}</td>
             <td class="muted" style="font-size: 12.5px; white-space: nowrap;">{{if .Households}}{{range $i, $h := .Households}}{{if $i}}, {{end}}{{$h}}{{end}}{{else}}<span class="chip chip--warn"><span class="chip__dot"></span>none</span>{{end}}</td>
+            <td>{{if .DisabledAt}}<span class="chip chip--err"><span class="chip__dot"></span>disabled</span>{{else}}<span class="chip chip--on"><span class="chip__dot"></span>active</span>{{end}}</td>
             <td class="num r muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
             <td class="num r muted">{{if .LastLoginAt}}{{.LastLoginAt.Format "Jan 2 15:04"}}{{else}}never{{end}}</td>
+            <td class="r" style="white-space: nowrap;">
+              {{if and $.User (eq .ID $.User.ID)}}
+              <span class="muted" style="font-size: 12px;">you</span>
+              {{else if .DisabledAt}}
+              <form method="POST" action="/admin/accounts/{{.ID}}/enable" style="display: inline;">
+                <button type="submit" class="btn btn--sm btn--quiet">Enable</button>
+              </form>
+              {{else}}
+              <button type="button" class="btn btn--sm btn--danger"
+                      data-confirm
+                      data-confirm-action="/admin/accounts/{{.ID}}/disable"
+                      data-confirm-title="Disable {{.Email}}?"
+                      data-confirm-body="They are signed out everywhere immediately and cannot sign in again until you enable the account. Their phones keep working."
+                      data-confirm-submit="Disable account">Disable</button>
+              {{end}}
+            </td>
           </tr>
           {{end}}
         </tbody>

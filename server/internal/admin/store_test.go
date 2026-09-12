@@ -60,7 +60,7 @@ func seedFixture(t *testing.T, database *db.Database, now time.Time) {
 	t.Helper()
 	alice := mustScan(t, database, `INSERT INTO users (email, name, created_at, last_login_at) VALUES ('alice@example.com', 'Alice', $1, $2) RETURNING id`, now.Add(-72*time.Hour), now.Add(-time.Hour))
 	bob := mustScan(t, database, `INSERT INTO users (email, name, created_at) VALUES ('bob@example.com', 'Bob', $1) RETURNING id`, now.Add(-48*time.Hour))
-	carol := mustScan(t, database, `INSERT INTO users (email, name, created_at) VALUES ('carol@example.com', 'Carol', $1) RETURNING id`, now.Add(-24*time.Hour))
+	carol := mustScan(t, database, `INSERT INTO users (email, name, created_at, disabled_at) VALUES ('carol@example.com', 'Carol', $1, $2) RETURNING id`, now.Add(-24*time.Hour), now.Add(-time.Hour))
 
 	alpha := mustScan(t, database, `INSERT INTO households (name, created_at) VALUES ('Alpha', $1) RETURNING id`, now.Add(-72*time.Hour))
 	beta := mustScan(t, database, `INSERT INTO households (name, created_at) VALUES ('Beta', $1) RETURNING id`, now.Add(-24*time.Hour))
@@ -124,6 +124,12 @@ func TestAccounts(t *testing.T) {
 	}
 	if got[1].LastLoginAt != nil {
 		t.Errorf("bob.LastLoginAt = %v, want nil", got[1].LastLoginAt)
+	}
+	if got[0].DisabledAt == nil {
+		t.Error("carol.DisabledAt = nil, want the fixture's timestamp")
+	}
+	if alice.DisabledAt != nil {
+		t.Errorf("alice.DisabledAt = %v, want nil", alice.DisabledAt)
 	}
 }
 

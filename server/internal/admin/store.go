@@ -57,13 +57,14 @@ type Account struct {
 	Name        string
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
+	DisabledAt  *time.Time
 	Households  []string
 }
 
 // Accounts lists every user, newest first.
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.email, u.name, u.created_at, u.last_login_at,
+		SELECT u.id, u.email, u.name, u.created_at, u.last_login_at, u.disabled_at,
 			COALESCE((
 				SELECT array_agg(h.name ORDER BY h.name)
 				FROM household_members m JOIN households h ON h.id = m.household_id
@@ -79,7 +80,7 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	var out []Account
 	for rows.Next() {
 		var a Account
-		if err := rows.Scan(&a.ID, &a.Email, &a.Name, &a.CreatedAt, &a.LastLoginAt, pq.Array(&a.Households)); err != nil {
+		if err := rows.Scan(&a.ID, &a.Email, &a.Name, &a.CreatedAt, &a.LastLoginAt, &a.DisabledAt, pq.Array(&a.Households)); err != nil {
 			return nil, fmt.Errorf("admin accounts scan: %w", err)
 		}
 		out = append(out, a)

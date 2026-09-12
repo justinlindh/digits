@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -191,4 +192,37 @@ func (h *Handler) loadAdminData(r *http.Request) (adminData, error) {
 		data.Devices = adminDeviceRows(lines, householdNames, h.hub.AllDeviceInfo, data.LatestPiVersion, data.LatestFirmwareVersion)
 	}
 	return data, nil
+}
+
+func (h *Handler) handleAdminAccountDisable(w http.ResponseWriter, r *http.Request) {
+	h.setAccountDisabled(w, r, true)
+}
+
+func (h *Handler) handleAdminAccountEnable(w http.ResponseWriter, r *http.Request) {
+	h.setAccountDisabled(w, r, false)
+}
+
+// setAccountDisabled is the shared body of the disable and enable actions.
+// It runs behind requireAdmin. An admin cannot disable their own account:
+// that would delete the session making the request and could lock every
+// admin out if the allowlist has one entry.
+func (h *Handler) setAccountDisabled(w http.ResponseWriter, r *http.Request, disabled bool) {
+	ctx := r.Context()
+	admin := auth.UserFromContext(ctx)
+	targetID := r.PathValue("id")
+	if disabled && admin != nil && admin.ID == targetID {
+		http.Error(w, "cannot disable your own account", http.StatusBadRequest)
+		return
+	}
+	if err := h.authStore.SetDisabled(ctx, targetID, disabled); err != nil {
+		if errors.Is(err, auth.ErrUserNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		slog.ErrorContext(ctx, "admin: set account disabled failed", "target_user_id", targetID, "disabled", disabled, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	slog.InfoContext(ctx, "admin: account disabled state changed", "admin_user_id", admin.ID, "target_user_id", targetID, "disabled", disabled)
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }

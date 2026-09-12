@@ -36,6 +36,13 @@ func (s *Store) RequireAuth(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 			return
 		}
+		// Disabling deletes sessions, but a session refreshed on another
+		// replica or raced past the delete must still be refused here.
+		if user.Disabled() {
+			clearSessionCookie(w, s.CookieDomain)
+			http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+			return
+		}
 		ctx := ContextWithUser(r.Context(), user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
