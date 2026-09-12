@@ -58,6 +58,21 @@ type adminHouseholdRow struct {
 }
 
 func (h *Handler) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	data, err := h.loadAdminData(r)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "admin: load failed", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	// Always the intercom layout: this is an operator view, not a themed
+	// household surface, and only one variant of the page exists.
+	renderWith(r.Context(), w, h.tmplAdmin, "layout-v2.html", data)
+}
+
+// loadAdminData assembles the page model. Timestamps are localized to the
+// admin's active household so the per-day buckets and the displayed dates
+// agree with each other.
+func (h *Handler) loadAdminData(r *http.Request) (adminData, error) {
 	ctx := r.Context()
 	now := time.Now()
 	since := now.Add(-adminWindow)
@@ -79,51 +94,41 @@ func (h *Handler) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if h.tracker != nil {
 		data.ActiveCalls = len(h.tracker.Active(ctx))
 	}
-
-	if h.adminStore != nil {
-		var err error
-		if data.Totals, err = h.adminStore.Totals(ctx, since); err != nil {
-			slog.ErrorContext(ctx, "admin: totals failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if data.Accounts, err = h.adminStore.Accounts(ctx); err != nil {
-			slog.ErrorContext(ctx, "admin: accounts failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		for i := range data.Accounts {
-			a := &data.Accounts[i]
-			a.CreatedAt = a.CreatedAt.In(loc)
-			if a.LastLoginAt != nil {
-				t := a.LastLoginAt.In(loc)
-				a.LastLoginAt = &t
-			}
-		}
-		households, err := h.adminStore.Households(ctx, since)
-		if err != nil {
-			slog.ErrorContext(ctx, "admin: households failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		for _, hh := range households {
-			hh.CreatedAt = hh.CreatedAt.In(loc)
-			row := adminHouseholdRow{Household: hh}
-			for _, n := range hh.Lines {
-				if online[n] {
-					row.Online++
-				}
-			}
-			data.Households = append(data.Households, row)
-		}
-		if data.Days, err = h.adminStore.CallsPerDay(ctx, since, now, loc); err != nil {
-			slog.ErrorContext(ctx, "admin: calls per day failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
+	if h.adminStore == nil {
+		return data, nil
 	}
 
-	// Always the intercom layout: this is an operator view, not a themed
-	// household surface, and only one variant of the page exists.
-	renderWith(ctx, w, h.tmplAdmin, "layout-v2.html", data)
+	var err error
+	if data.Totals, err = h.adminStore.Totals(ctx, since); err != nil {
+		return adminData{}, err
+	}
+	if data.Accounts, err = h.adminStore.Accounts(ctx); err != nil {
+		return adminData{}, err
+	}
+	for i := range data.Accounts {
+		a := &data.Accounts[i]
+		a.CreatedAt = a.CreatedAt.In(loc)
+		if a.LastLoginAt != nil {
+			t := a.LastLoginAt.In(loc)
+			a.LastLoginAt = &t
+		}
+	}
+	households, err := h.adminStore.Households(ctx, since)
+	if err != nil {
+		return adminData{}, err
+	}
+	for _, hh := range households {
+		hh.CreatedAt = hh.CreatedAt.In(loc)
+		row := adminHouseholdRow{Household: hh}
+		for _, n := range hh.Lines {
+			if online[n] {
+				row.Online++
+			}
+		}
+		data.Households = append(data.Households, row)
+	}
+	if data.Days, err = h.adminStore.CallsPerDay(ctx, since, now, loc); err != nil {
+		return adminData{}, err
+	}
+	return data, nil
 }
