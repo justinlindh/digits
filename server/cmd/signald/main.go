@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/justinlindh/digits/server/internal/admin"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/config"
@@ -272,9 +273,11 @@ func run(ctx context.Context) error {
 		Emailer:        emailSender,
 		Metrics:        mreg,
 		RedisClient:    rateLimitRedis,
+		AdminStore:     admin.NewStore(database.DB),
 	}, web.HandlerConfig{
 		BaseURL:           cfg.BaseURL,
 		AdminSecret:       cfg.AdminSecret,
+		AdminEmails:       cfg.AdminEmails,
 		DevMode:           cfg.DevMode,
 		WSRateLimitPerMin: cfg.WSRateLimitPerMin,
 		TrustedProxies:    cfg.TrustedProxies,

@@ -74,7 +74,7 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	if err != nil {
 		return nil, fmt.Errorf("admin accounts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Account
 	for rows.Next() {
@@ -130,7 +130,7 @@ func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, e
 	if err != nil {
 		return nil, fmt.Errorf("admin households: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Household
 	for rows.Next() {
@@ -170,7 +170,7 @@ func (s *Store) CallsPerDay(ctx context.Context, since, until time.Time, loc *ti
 	if err != nil {
 		return nil, fmt.Errorf("admin calls per day: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := map[string]DayCount{}
 	for rows.Next() {

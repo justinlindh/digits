@@ -1,11 +1,17 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/justinlindh/digits/server/internal/admin"
 	"github.com/justinlindh/digits/server/internal/auth"
 )
+
+// adminWindow is the lookback for every "recent" figure on the admin page.
+const adminWindow = 7 * 24 * time.Hour
 
 // requireAdmin gates a route behind the configured admin allowlist. It runs
 // inside RequireAuth, so the session is already validated; this only checks
@@ -31,4 +37,93 @@ func isAdminEmail(allow []string, email string) bool {
 		}
 	}
 	return false
+}
+
+type adminData struct {
+	chromeData
+	WindowDays  int
+	Timezone    string
+	Totals      admin.Totals
+	OnlineLines int
+	ActiveCalls int
+	Accounts    []admin.Account
+	Households  []adminHouseholdRow
+	Days        []admin.DayCount
+}
+
+// adminHouseholdRow adds the live online-line count to a stored household.
+type adminHouseholdRow struct {
+	admin.Household
+	Online int
+}
+
+func (h *Handler) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	now := time.Now()
+	since := now.Add(-adminWindow)
+	loc := h.activeHousehold(r).Location()
+
+	data := adminData{
+		chromeData: h.newChromeDataWithHouseholds(r, "admin"),
+		WindowDays: int(adminWindow.Hours() / 24),
+		Timezone:   loc.String(),
+	}
+
+	online := map[string]bool{}
+	if h.hub != nil {
+		for _, n := range h.hub.OnlineNumbers() {
+			online[n] = true
+		}
+	}
+	data.OnlineLines = len(online)
+	if h.tracker != nil {
+		data.ActiveCalls = len(h.tracker.Active(ctx))
+	}
+
+	if h.adminStore != nil {
+		var err error
+		if data.Totals, err = h.adminStore.Totals(ctx, since); err != nil {
+			slog.ErrorContext(ctx, "admin: totals failed", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if data.Accounts, err = h.adminStore.Accounts(ctx); err != nil {
+			slog.ErrorContext(ctx, "admin: accounts failed", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		for i := range data.Accounts {
+			a := &data.Accounts[i]
+			a.CreatedAt = a.CreatedAt.In(loc)
+			if a.LastLoginAt != nil {
+				t := a.LastLoginAt.In(loc)
+				a.LastLoginAt = &t
+			}
+		}
+		households, err := h.adminStore.Households(ctx, since)
+		if err != nil {
+			slog.ErrorContext(ctx, "admin: households failed", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		for _, hh := range households {
+			hh.CreatedAt = hh.CreatedAt.In(loc)
+			row := adminHouseholdRow{Household: hh}
+			for _, n := range hh.Lines {
+				if online[n] {
+					row.Online++
+				}
+			}
+			data.Households = append(data.Households, row)
+		}
+		if data.Days, err = h.adminStore.CallsPerDay(ctx, since, now, loc); err != nil {
+			slog.ErrorContext(ctx, "admin: calls per day failed", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Always the intercom layout: this is an operator view, not a themed
+	// household surface, and only one variant of the page exists.
+	renderWith(ctx, w, h.tmplAdmin, "layout-v2.html", data)
 }

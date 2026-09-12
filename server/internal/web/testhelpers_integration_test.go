@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
+	"github.com/justinlindh/digits/server/internal/admin"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
@@ -173,6 +174,7 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 		LinkStore:      linkStore,
 		InviteStore:    household.NewInviteStore(database.DB),
 		Emailer:        emailSender,
+		AdminStore:     admin.NewStore(database.DB),
 	}, authStore
 }
 
