@@ -186,3 +186,36 @@ func TestLoadEnvOverrides(t *testing.T) {
 		t.Error("DevMode: expected true")
 	}
 }
+
+func TestListEnv(t *testing.T) {
+	t.Run("splits on commas, trims, lowercases, drops empties", func(t *testing.T) {
+		t.Setenv("TEST_LIST_VAR", " Alice@Example.com, ,bob@example.com ,")
+		var got []string
+		listEnv("TEST_LIST_VAR", &got)
+		want := []string{"alice@example.com", "bob@example.com"}
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("got %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("keeps default when env var is unset", func(t *testing.T) {
+		got := []string{"keep"}
+		listEnv("TEST_UNSET_LIST_XYZ", &got)
+		if len(got) != 1 || got[0] != "keep" {
+			t.Errorf("got %v, want [keep]", got)
+		}
+	})
+}
+
+func TestLoadAdminEmails(t *testing.T) {
+	t.Setenv("ADMIN_EMAILS", "Admin@Example.com")
+	c := Load()
+	if len(c.AdminEmails) != 1 || c.AdminEmails[0] != "admin@example.com" {
+		t.Errorf("AdminEmails = %v, want [admin@example.com]", c.AdminEmails)
+	}
+}

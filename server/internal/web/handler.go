@@ -250,6 +250,9 @@ type HandlerConfig struct {
 	BaseURL string
 	// AdminSecret gates /internal/stats. Empty disables the endpoint.
 	AdminSecret string
+	// AdminEmails lists the lowercased account emails allowed to view
+	// /admin. Empty disables the page: every request gets a 404.
+	AdminEmails []string
 	// DevMode enables development-only conveniences. Today that means
 	// serving /static/ from disk instead of the embedded FS, so CSS and
 	// JS edits don't require a signald rebuild. When false, the embedded
