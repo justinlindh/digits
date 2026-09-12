@@ -159,6 +159,7 @@ func (d *daemonCallbacks) AnswerCall() {
 		d.pendingCaller = ""
 
 		d.sendPreparedAnswer(pa)
+		d.armConnectWatchdog(caller)
 
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
@@ -234,6 +235,7 @@ func (d *daemonCallbacks) AnswerCall() {
 		SDP:  answerSDP,
 	})
 	close(sdpSent)
+	d.armConnectWatchdog(caller)
 
 	if d.pipeline == nil {
 		d.pipeline = d.newPipeline()
@@ -247,7 +249,37 @@ func (d *daemonCallbacks) AnswerCall() {
 	slog.Info("answered call", "caller", caller)
 }
 
-func (d *daemonCallbacks) HangupCall() {
+// armConnectWatchdog starts the post-answer connect deadline for the current
+// 2-party peer: if it has not reached Connected within connectTimeout the
+// controller is told the call failed and both ends get the failure
+// treatment. The watchdog is tied to the peer manager it was armed for, so a
+// hangup or a fresh call that replaces d.peerMgr makes it a no-op. Caller
+// must hold d.mu.
+func (d *daemonCallbacks) armConnectWatchdog(peer string) {
+	if d.peerMgr == nil {
+		return
+	}
+	go d.runConnectWatchdog(d.peerMgr, peer, connectTimeout)
+}
+
+// runConnectWatchdog is the body of armConnectWatchdog; it blocks until pm
+// connects, dies, or timeout passes.
+func (d *daemonCallbacks) runConnectWatchdog(pm *owebrtc.PeerManager, peer string, timeout time.Duration) {
+	defer recoverGoroutine("connect-watchdog")
+	if waitForPeerConnected(pm.ConnectionState, timeout) {
+		return
+	}
+	d.mu.Lock()
+	live := d.peerMgr == pm
+	d.mu.Unlock()
+	if !live {
+		return
+	}
+	slog.Error("webrtc: answered call never connected", "peer", peer, "state", pm.ConnectionState().String(), "timeout", timeout)
+	d.ctrlSignal.HandleSignal("connect_failed", peer)
+}
+
+func (d *daemonCallbacks) HangupCall(reason string) {
 	t0 := time.Now()
 	d.mu.Lock()
 
@@ -312,7 +344,7 @@ func (d *daemonCallbacks) HangupCall() {
 	d.cancelRestartTimerLocked()
 	d.cancelDisconnectDebounceLocked()
 
-	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
+	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer, Reason: reason})
 
 	// Snapshot the slow-to-close resources and null them out so a fresh
 	// call setup (next pickup) doesn't have to wait for pion's DTLS / ICE

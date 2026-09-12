@@ -67,10 +67,15 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 				slog.Info("webrtc: set remote answer", "from", msg.From, "bytes", len(msg.SDP))
 			}
 		}
+		d.armConnectWatchdog(msg.From)
 		d.mu.Unlock()
 		ctrl.HandleSignal("answer", msg.From)
 	case sigclient.TypeHangup:
-		ctrl.HandleSignal("hangup", msg.From)
+		if msg.Reason == sigclient.HangupReasonConnectTimeout {
+			ctrl.HandleSignal("connect_failed", msg.From)
+		} else {
+			ctrl.HandleSignal("hangup", msg.From)
+		}
 	case sigclient.TypeBusy:
 		if d.callReturnOrigin.Load() {
 			d.callReturnOrigin.Store(false)

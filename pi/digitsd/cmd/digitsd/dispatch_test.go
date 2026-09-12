@@ -166,6 +166,16 @@ func TestDispatchRouting_FSMDelegating(t *testing.T) {
 		}
 	})
 
+	t.Run("hangup with connect_timeout reason", func(t *testing.T) {
+		fc := &fakeController{}
+		d := newDispatchDaemon(t, fc)
+		d.handleSignal(&sigclient.Message{Type: sigclient.TypeHangup, From: "3140003", Reason: sigclient.HangupReasonConnectTimeout})
+		got, _ := fc.lastSignal()
+		if got != (signalCall{"connect_failed", "3140003"}) {
+			t.Fatalf("reasoned hangup routed to %+v, want HandleSignal(connect_failed, 3140003)", got)
+		}
+	})
+
 	t.Run("busy without call-return origin", func(t *testing.T) {
 		fc := &fakeController{}
 		d := newDispatchDaemon(t, fc)

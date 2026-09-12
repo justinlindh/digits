@@ -20,6 +20,7 @@ type mockCallbacks struct {
 	leds               []string
 	calls              []string
 	hangups            int
+	hangupReasons      []string // reason passed to each HangupCall, "" for a plain hangup
 	answers            int
 	callConnectedCalls int
 	picoResets         int
@@ -36,6 +37,7 @@ type mockCallbacks struct {
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
 	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
 	initiateCallErr    error             // injected error for InitiateCall
+	oncePlaying        func() bool       // OncePlaying override; nil = never playing
 	voicemailAutoAnswers     int
 	voicemailAutoAnswerFails bool // true = VoicemailAutoAnswer reports failure
 	voicemailPickups         int
@@ -56,7 +58,12 @@ func (m *mockCallbacks) SendTone(name string) {
 	defer m.mu.Unlock()
 	m.tones = append(m.tones, name)
 }
-func (m *mockCallbacks) OncePlaying() bool { return false }
+func (m *mockCallbacks) OncePlaying() bool {
+	if m.oncePlaying != nil {
+		return m.oncePlaying()
+	}
+	return false
+}
 func (m *mockCallbacks) StartRing() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -88,10 +95,11 @@ func (m *mockCallbacks) AnswerCall() {
 	defer m.mu.Unlock()
 	m.answers++
 }
-func (m *mockCallbacks) HangupCall() {
+func (m *mockCallbacks) HangupCall(reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.hangups++
+	m.hangupReasons = append(m.hangupReasons, reason)
 }
 func (m *mockCallbacks) NotifyCallConnected() {
 	m.mu.Lock()

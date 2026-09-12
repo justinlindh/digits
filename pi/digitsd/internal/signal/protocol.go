@@ -109,6 +109,13 @@ const (
 	TypeConferenceRejected = "conference_rejected" // server -> client (merge validation failed)
 )
 
+// HangupReasonConnectTimeout is the Reason carried on a hangup sent by a
+// phone that answered (or had its call answered) but whose WebRTC peer never
+// reached Connected. The server records it in the call history and forwards
+// it on the hangup delivered to the far end, which plays the same failure
+// treatment instead of the plain remote-hangup sequence.
+const HangupReasonConnectTimeout = "connect_timeout"
+
 // Conference member role constants. These match the server-side DB CHECK
 // constraint and the wire representation in ConferenceMemberInfo.Role.
 const (

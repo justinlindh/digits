@@ -345,6 +345,8 @@ func (d *daemonCallbacks) SendTone(name string) {
 		d.mixer.PlayOnce("intercept")
 	case phone.ToneDisconnected:
 		d.mixer.PlayOnce("disconnected")
+	case phone.ToneCallFailed:
+		d.mixer.PlayOnce("call_failed")
 	case phone.ToneStop:
 		d.mixer.StopTone()
 	case phone.ToneStopAll:
@@ -2574,7 +2576,7 @@ func reconnectLoop(
 			} else {
 				slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
 				cb.TearDownAllMeshPeers()
-				cb.HangupCall()
+				cb.HangupCall("")
 				ctrl.Reset()
 			}
 		}
