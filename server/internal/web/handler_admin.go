@@ -8,6 +8,9 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/admin"
 	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/updates"
 )
 
 // adminWindow is the lookback for every "recent" figure on the admin page.
@@ -48,13 +51,54 @@ type adminData struct {
 	ActiveCalls int
 	Accounts    []admin.Account
 	Households  []adminHouseholdRow
+	Devices     []adminDeviceRow
 	Days        []admin.DayCount
+	// Latest released versions from the release index; empty when the
+	// index is unavailable, in which case no device is flagged behind.
+	LatestPiVersion       string
+	LatestFirmwareVersion string
 }
 
 // adminHouseholdRow adds the live online-line count to a stored household.
 type adminHouseholdRow struct {
 	admin.Household
 	Online int
+}
+
+// adminDeviceRow is one line's connected-device view: the oldest reported
+// Pi and firmware versions across its devices, flagged when behind the
+// latest release. Versions are only known while a device is connected.
+type adminDeviceRow struct {
+	Number          string
+	Name            string
+	Household       string
+	Online          bool
+	PiVersion       string
+	PiBehind        bool
+	FirmwareVersion string
+	FirmwareBehind  bool
+}
+
+// adminDeviceRows builds one row per line in the order given. households
+// maps household ID to display name; infoFor returns the connected-device
+// snapshots for a line number. An empty latest version never flags a row.
+func adminDeviceRows(lines []line.Line, households map[string]string, infoFor func(string) []signaling.DeviceInfoSnapshot, latestPi, latestFw string) []adminDeviceRow {
+	rows := make([]adminDeviceRow, 0, len(lines))
+	for _, l := range lines {
+		infos := infoFor(l.Number)
+		pi, fw := oldestVersions(infos)
+		rows = append(rows, adminDeviceRow{
+			Number:          l.Number,
+			Name:            l.Name,
+			Household:       households[l.HouseholdID],
+			Online:          len(infos) > 0,
+			PiVersion:       pi,
+			PiBehind:        pi != "" && latestPi != "" && updates.CompareSemver(pi, latestPi) < 0,
+			FirmwareVersion: fw,
+			FirmwareBehind:  fw != "" && latestFw != "" && updates.CompareSemver(fw, latestFw) < 0,
+		})
+	}
+	return rows
 }
 
 func (h *Handler) handleAdmin(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +161,9 @@ func (h *Handler) loadAdminData(r *http.Request) (adminData, error) {
 	if err != nil {
 		return adminData{}, err
 	}
+	householdNames := make(map[string]string, len(households))
 	for _, hh := range households {
+		householdNames[hh.ID] = hh.Name
 		hh.CreatedAt = hh.CreatedAt.In(loc)
 		row := adminHouseholdRow{Household: hh}
 		for _, n := range hh.Lines {
@@ -129,6 +175,20 @@ func (h *Handler) loadAdminData(r *http.Request) (adminData, error) {
 	}
 	if data.Days, err = h.adminStore.CallsPerDay(ctx, since, now, loc); err != nil {
 		return adminData{}, err
+	}
+
+	if h.releases != nil {
+		if idx := h.releases.ReleaseIndex(); idx != nil {
+			data.LatestPiVersion = idx.Pi.Latest
+			data.LatestFirmwareVersion = idx.Firmware.Latest
+		}
+	}
+	if h.lineStore != nil && h.hub != nil {
+		lines, err := h.lineStore.List(ctx)
+		if err != nil {
+			return adminData{}, err
+		}
+		data.Devices = adminDeviceRows(lines, householdNames, h.hub.AllDeviceInfo, data.LatestPiVersion, data.LatestFirmwareVersion)
 	}
 	return data, nil
 }

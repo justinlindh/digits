@@ -5,7 +5,9 @@
 
   <header class="page__head">
     <h1 class="page__title">Admin</h1>
-    <div class="muted hstack" style="font-size: 12px;">
+    <div class="muted hstack hstack--wrap" style="font-size: 12px;">
+      {{if .LatestPiVersion}}<span class="chip"><span class="chip__dot"></span>pi <span class="num">{{.LatestPiVersion}}</span></span>{{end}}
+      {{if .LatestFirmwareVersion}}<span class="chip"><span class="chip__dot"></span>fw <span class="num">{{.LatestFirmwareVersion}}</span></span>{{end}}
       <span class="chip"><span class="chip__dot"></span>Last {{.WindowDays}} days</span>
       <span class="num muted">{{.Timezone}}</span>
     </div>
@@ -78,6 +80,41 @@
     </div>
     {{else}}
     <div class="empty"><div>No households yet.</div></div>
+    {{end}}
+  </section>
+
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Devices</h2>
+      <span class="panel__title-sub">Versions are reported on connect, so offline lines show none</span>
+    </header>
+    {{if .Devices}}
+    <div style="overflow-x: auto;">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Line</th>
+            <th>Household</th>
+            <th>Status</th>
+            <th>Pi</th>
+            <th>Firmware</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Devices}}
+          <tr>
+            <td style="white-space: nowrap;"><span class="num" style="color: var(--ink);">{{fmtPhone .Number}}</span>{{if .Name}} <span class="muted">{{.Name}}</span>{{end}}</td>
+            <td style="white-space: nowrap;">{{.Household}}</td>
+            <td>{{if .Online}}<span class="chip chip--on"><span class="chip__dot"></span>online</span>{{else}}<span class="chip"><span class="chip__dot"></span>offline</span>{{end}}</td>
+            <td class="num" style="white-space: nowrap;">{{if .PiVersion}}{{.PiVersion}}{{if .PiBehind}} <span class="chip chip--warn"><span class="chip__dot"></span>behind</span>{{end}}{{else}}<span class="muted">&ndash;</span>{{end}}</td>
+            <td class="num" style="white-space: nowrap;">{{if .FirmwareVersion}}{{.FirmwareVersion}}{{if .FirmwareBehind}} <span class="chip chip--warn"><span class="chip__dot"></span>behind</span>{{end}}{{else}}<span class="muted">&ndash;</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="empty"><div>No lines yet.</div></div>
     {{end}}
   </section>
 

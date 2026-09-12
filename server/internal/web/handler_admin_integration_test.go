@@ -12,6 +12,8 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/updates"
 )
 
 // setupAdminHandler is setupHandler with an admin allowlist applied.
@@ -72,13 +74,17 @@ func TestAdminPage_Admin_RendersOverview(t *testing.T) {
 	h, database, authStore := setupAdminHandler(t, "test@example.com")
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	ln, _ := setupLineWithConn(t, h, database, hh, "7000001", "Admin Test Line")
+	h.hub.UpdateDeviceInfo(ln.Number, signaling.DeviceInfoParams{PiVersion: "0.6.0", FirmwareVersion: "1.3.0"})
+	h.SetReleases(updates.FakeReleaseIndex())
 
 	w := getAdmin(h, cookie)
 	if w.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200; body: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	for _, want := range []string{"test@example.com", hh.Name, line.FormatNumber(ln.Number)} {
+	// Reported device versions, the fixture's latest releases, and the line
+	// name all render; the device is behind on both components.
+	for _, want := range []string{"test@example.com", hh.Name, line.FormatNumber(ln.Number), ln.Name, "0.6.0", "1.3.0", "0.7.0", "1.4.0", "behind"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
 		}
