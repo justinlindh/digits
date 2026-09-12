@@ -207,6 +207,14 @@ func (t *Tracker) OnCallAnswered(ctx context.Context, caller, callee string) err
 }
 
 func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error {
+	return t.OnCallEndedWithReason(ctx, caller, callee, "")
+}
+
+// OnCallEndedWithReason ends the call like OnCallEnded and records reason in
+// calls.end_reason when it is non-empty. An empty reason leaves the column
+// untouched so a later, more specific writer (or an earlier one) is never
+// blanked.
+func (t *Tracker) OnCallEndedWithReason(ctx context.Context, caller, callee, reason string) error {
 	// Try both directions since either side can hang up
 	key1 := callKey(caller, callee)
 	key2 := callKey(callee, caller)
@@ -238,14 +246,15 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 	}
 
 	_, err := t.db.ExecContext(ctx,
-		`UPDATE calls SET `+endCallSetClause+`
+		`UPDATE calls SET `+endCallSetClause+`,
+		   end_reason = COALESCE(NULLIF($5, ''), end_reason)
 		 WHERE id = (
 		   SELECT id FROM calls
 		   WHERE ((caller = $1 AND callee = $2) OR (caller = $3 AND callee = $4))
 		   AND status IN ('initiated', 'ringing', 'connected')
 		   ORDER BY started_at DESC LIMIT 1
 		 )`,
-		caller, callee, callee, caller,
+		caller, callee, callee, caller, reason,
 	)
 	if err != nil {
 		return fmt.Errorf("end call: %w", err)
