@@ -55,9 +55,6 @@ func (m *mockTracker) OnCallAnswered(ctx context.Context, caller, callee string)
 	m.answered = append(m.answered, caller+"→"+callee)
 	return nil
 }
-func (m *mockTracker) OnCallEnded(ctx context.Context, caller, callee string) error {
-	return m.OnCallEndedWithReason(ctx, caller, callee, "")
-}
 func (m *mockTracker) OnCallEndedWithReason(ctx context.Context, caller, callee, reason string) error {
 	m.ended = append(m.ended, caller+"→"+callee)
 	m.endReasons = append(m.endReasons, reason)
@@ -1739,14 +1736,9 @@ func TestHangupReasonForwardedAndRecorded(t *testing.T) {
 
 	relay.HandleMessage(context.Background(), "5550002", &Message{Type: TypeHangup, Reason: "connect_timeout"})
 
-	select {
-	case data := <-d1.Send:
-		m, _ := ParseMessage(data)
-		if m.Type != TypeHangup || m.Reason != "connect_timeout" {
-			t.Fatalf("expected hangup with reason connect_timeout, got %+v", m)
-		}
-	default:
-		t.Fatal("caller did not receive hangup")
+	m := drainOne(t, d1.Send)
+	if m.Type != TypeHangup || m.Reason != "connect_timeout" {
+		t.Fatalf("expected hangup with reason connect_timeout, got %+v", m)
 	}
 	if len(tracker.endReasons) != 1 || tracker.endReasons[0] != "connect_timeout" {
 		t.Fatalf("tracker end reasons = %v, want [connect_timeout]", tracker.endReasons)

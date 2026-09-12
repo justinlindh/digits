@@ -41,7 +41,6 @@ const (
 type CallTracker interface {
 	OnCallInitiated(ctx context.Context, from, to string) (int64, error)
 	OnCallAnswered(ctx context.Context, caller, callee string) error
-	OnCallEnded(ctx context.Context, caller, callee string) error
 	OnCallEndedWithReason(ctx context.Context, caller, callee, reason string) error
 	ClearByNumber(ctx context.Context, number string)
 	InCall(ctx context.Context, a, b string) bool
