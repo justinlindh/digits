@@ -93,15 +93,18 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 
 // Household is one household with its membership, line numbers, paired
 // device count, and the number of calls in the window that touched any of
-// its lines as caller or callee.
+// its lines as caller or callee. Calls is always zero for a household that
+// has call history turned off: the operator view is a subset of what the
+// household chose to keep for itself, never more.
 type Household struct {
-	ID            string
-	Name          string
-	CreatedAt     time.Time
-	Members       []string
-	Lines         []string
-	PairedDevices int
-	Calls         int
+	ID                 string
+	Name               string
+	CreatedAt          time.Time
+	Members            []string
+	Lines              []string
+	PairedDevices      int
+	CallHistoryEnabled bool
+	Calls              int
 }
 
 // Households lists every household, oldest first. since bounds the per
@@ -120,10 +123,13 @@ func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, e
 			), '{}'),
 			(SELECT COUNT(*) FROM devices d JOIN lines l ON l.id = d.line_id
 				WHERE l.household_id = h.id AND d.paired_at IS NOT NULL),
-			(SELECT COUNT(*) FROM calls c
-				WHERE c.started_at >= $1
-				AND (c.caller IN (SELECT number FROM lines WHERE household_id = h.id)
-					OR c.callee IN (SELECT number FROM lines WHERE household_id = h.id)))
+			h.call_history_enabled,
+			CASE WHEN h.call_history_enabled THEN
+				(SELECT COUNT(*) FROM calls c
+					WHERE c.started_at >= $1
+					AND (c.caller IN (SELECT number FROM lines WHERE household_id = h.id)
+						OR c.callee IN (SELECT number FROM lines WHERE household_id = h.id)))
+			ELSE 0 END
 		FROM households h
 		ORDER BY h.created_at, h.name`,
 		since,
@@ -136,7 +142,7 @@ func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, e
 	var out []Household
 	for rows.Next() {
 		var h Household
-		if err := rows.Scan(&h.ID, &h.Name, &h.CreatedAt, pq.Array(&h.Members), pq.Array(&h.Lines), &h.PairedDevices, &h.Calls); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.CreatedAt, pq.Array(&h.Members), pq.Array(&h.Lines), &h.PairedDevices, &h.CallHistoryEnabled, &h.Calls); err != nil {
 			return nil, fmt.Errorf("admin households scan: %w", err)
 		}
 		out = append(out, h)

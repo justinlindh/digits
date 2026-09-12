@@ -71,7 +71,7 @@
             <td class="num" style="white-space: nowrap;">{{range $i, $n := .Lines}}{{if $i}}<br>{{end}}{{fmtPhone $n}}{{end}}</td>
             <td class="num r">{{.PairedDevices}}</td>
             <td class="num r">{{if gt .Online 0}}<span class="chip chip--on"><span class="chip__dot"></span>{{.Online}} online</span>{{else}}<span class="muted">0 online</span>{{end}}</td>
-            <td class="num r">{{.Calls}}</td>
+            <td class="num r">{{if .CallHistoryEnabled}}{{.Calls}}{{else}}<span class="muted" title="This household keeps no call history, so none is shown here either">&ndash;</span>{{end}}</td>
             <td class="num r muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
           </tr>
           {{end}}

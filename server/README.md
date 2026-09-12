@@ -251,7 +251,7 @@ See `.env.example` for a starter config file.
 | `/api/status`           | Current call status                      |
 | `/api/active-calls`     | Active calls list                        |
 | `/internal/stats`       | Internal stats (requires `ADMIN_SECRET`) |
-| `/admin`                | Operator overview: accounts, households, devices, calls per day. Linked in the nav only for `ADMIN_EMAILS` users; 404 for everyone else |
+| `/admin`                | Operator overview: accounts, households, devices, calls per day. Linked in the nav only for `ADMIN_EMAILS` users; 404 for everyone else. Privacy boundaries in `docs/admin.md` |
 | `/admin/accounts/{id}/disable`, `/enable` | POST. Disable signs the account out everywhere and blocks sign-in until enabled. Same gate as `/admin` |
 
 The UI uses htmx for partial updates and hand-written custom CSS for styling (`digits.css` plus per-theme overrides in `internal/web/static/`). Three themes ship: `intercom` (default), `dialup`, and `answering-machine`; the per-user choice lives on `users.theme`.

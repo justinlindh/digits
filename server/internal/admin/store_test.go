@@ -62,8 +62,10 @@ func seedFixture(t *testing.T, database *db.Database, now time.Time) {
 	bob := mustScan(t, database, `INSERT INTO users (email, name, created_at) VALUES ('bob@example.com', 'Bob', $1) RETURNING id`, now.Add(-48*time.Hour))
 	carol := mustScan(t, database, `INSERT INTO users (email, name, created_at, disabled_at) VALUES ('carol@example.com', 'Carol', $1, $2) RETURNING id`, now.Add(-24*time.Hour), now.Add(-time.Hour))
 
-	alpha := mustScan(t, database, `INSERT INTO households (name, created_at) VALUES ('Alpha', $1) RETURNING id`, now.Add(-72*time.Hour))
-	beta := mustScan(t, database, `INSERT INTO households (name, created_at) VALUES ('Beta', $1) RETURNING id`, now.Add(-24*time.Hour))
+	// Alpha keeps call history; Beta opted out, so its per-household count
+	// must not be visible to an operator even though its calls are stored.
+	alpha := mustScan(t, database, `INSERT INTO households (name, created_at, call_history_enabled) VALUES ('Alpha', $1, true) RETURNING id`, now.Add(-72*time.Hour))
+	beta := mustScan(t, database, `INSERT INTO households (name, created_at, call_history_enabled) VALUES ('Beta', $1, false) RETURNING id`, now.Add(-24*time.Hour))
 	mustExec(t, database, `INSERT INTO household_members (user_id, household_id) VALUES ($1, $2), ($3, $2), ($4, $5)`, alice, alpha, bob, carol, beta)
 
 	l1 := mustScan(t, database, `INSERT INTO lines (number, name, household_id) VALUES ('1000001', 'Kitchen', $1) RETURNING id`, alpha)
@@ -155,11 +157,16 @@ func TestHouseholds(t *testing.T) {
 	if len(alpha.Lines) != 2 || alpha.Lines[0] != "1000001" || alpha.Lines[1] != "1000002" {
 		t.Errorf("alpha.Lines = %v", alpha.Lines)
 	}
-	if alpha.PairedDevices != 1 || alpha.Calls != 4 {
-		t.Errorf("alpha devices=%d calls=%d, want 1 and 4", alpha.PairedDevices, alpha.Calls)
+	if alpha.PairedDevices != 1 || alpha.Calls != 4 || !alpha.CallHistoryEnabled {
+		t.Errorf("alpha devices=%d calls=%d history=%v, want 1, 4, true", alpha.PairedDevices, alpha.Calls, alpha.CallHistoryEnabled)
 	}
-	if len(beta.Members) != 1 || len(beta.Lines) != 1 || beta.PairedDevices != 0 || beta.Calls != 1 {
+	if len(beta.Members) != 1 || len(beta.Lines) != 1 || beta.PairedDevices != 0 {
 		t.Errorf("beta = %+v", beta)
+	}
+	// Beta has one stored call in the window but opted out of call history,
+	// so the operator view reports none.
+	if beta.CallHistoryEnabled || beta.Calls != 0 {
+		t.Errorf("beta history=%v calls=%d, want false and 0", beta.CallHistoryEnabled, beta.Calls)
 	}
 }
 
