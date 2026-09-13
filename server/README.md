@@ -236,7 +236,8 @@ See `.env.example` for a starter config file.
 |---------------------------|---------------------------|
 | `/auth/login`             | Login page                |
 | `POST /auth/magic`        | Request magic link email  |
-| `/auth/magic/{token}`     | Verify magic link         |
+| `GET /auth/magic/{token}` | Emailed link landing: renders a sign-in button, consumes nothing (mail security scanners fetch links) |
+| `POST /auth/magic/{token}` | Verify magic link and sign in |
 | `/auth/google/login`      | Google OAuth login        |
 | `/auth/google/callback`   | Google OAuth callback     |
 | `POST /auth/logout`       | Log out                   |

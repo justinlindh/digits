@@ -18,7 +18,7 @@ import (
 // minimalTemplate builds a trivial template that satisfies ExecuteTemplate("layout-v2.html", data).
 func minimalTemplate(t *testing.T) *template.Template {
 	t.Helper()
-	tmpl, err := template.New("layout-v2.html").Parse(`{{.Page}} google={{.GoogleEnabled}} error={{.Error}} success={{.Success}}`)
+	tmpl, err := template.New("layout-v2.html").Parse(`{{.Page}} google={{.GoogleEnabled}} error={{.Error}} success={{.Success}}{{if .MagicToken}}<form action="/auth/magic/{{.MagicToken}}" method="POST"></form>{{end}}`)
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestHandleMagicLinkVerify_ValidToken_NewUser(t *testing.T) {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic/"+token, nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/magic/"+token, nil)
 	req.SetPathValue("token", token)
 	w := httptest.NewRecorder()
 	h.HandleMagicLinkVerify(w, req)
@@ -194,7 +194,7 @@ func TestHandleMagicLinkVerify_ValidToken_ExistingUser(t *testing.T) {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic/"+token, nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/magic/"+token, nil)
 	req.SetPathValue("token", token)
 	w := httptest.NewRecorder()
 	h.HandleMagicLinkVerify(w, req)
@@ -361,7 +361,7 @@ func TestHandleMagicLinkVerify_DialupThemeRedirectsToConnecting(t *testing.T) {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic/"+token, nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/magic/"+token, nil)
 	req.SetPathValue("token", token)
 	w := httptest.NewRecorder()
 	h.HandleMagicLinkVerify(w, req)
@@ -420,7 +420,7 @@ func TestMagicLinkVerifyEmitsConsumedAndSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic/"+token, nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/magic/"+token, nil)
 	req.SetPathValue("token", token)
 	h.HandleMagicLinkVerify(httptest.NewRecorder(), req)
 

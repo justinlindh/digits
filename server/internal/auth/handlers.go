@@ -113,6 +113,23 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/auth/login?success=check+your+email", http.StatusSeeOther)
 }
 
+// HandleMagicLinkConfirm serves the GET half of an emailed link: a page with
+// a single button that POSTs the same URL. It touches nothing in the store,
+// so a mail security scanner that fetches every link in an inbound message
+// cannot consume the token or create an account; only the form submission
+// does. Token validity is checked on the POST, not here.
+func (h *Handlers) HandleMagicLinkConfirm(w http.ResponseWriter, r *http.Request) {
+	data := map[string]any{
+		"Page":       "login",
+		"Version":    version.Version,
+		"MagicToken": r.PathValue("token"),
+	}
+	if err := h.loginTmpl.ExecuteTemplate(w, "layout-v2.html", data); err != nil {
+		slog.ErrorContext(r.Context(), "magic link confirm template render failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}
+}
+
 // HandleMagicLinkVerify validates a magic link token and creates a session.
 func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")

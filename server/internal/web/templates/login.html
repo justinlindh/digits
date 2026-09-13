@@ -14,6 +14,15 @@
       {{if .Error}}<div class="banner banner--err" style="margin-top: 0;">{{.Error}}</div>{{end}}
       {{if .Success}}<div class="banner banner--ok" style="margin-top: 0;">{{.Success}}</div>{{end}}
 
+      {{if .MagicToken}}
+      {{/* Emailed link landing. The link itself is inert on GET so that mail
+           security scanners fetching it cannot sign anyone in; the person
+           presses the button and the POST does the actual sign-in. */}}
+      <form action="/auth/magic/{{.MagicToken}}" method="POST" class="stack-md">
+        <p class="muted" style="font-size: 13px; text-align: center; margin: 0;">Press the button to finish signing in. This link works once and expires after 15 minutes.</p>
+        <button type="submit" class="btn btn--brass" style="width: 100%;">Sign in to Digits</button>
+      </form>
+      {{else}}
       {{if .GoogleEnabled}}
       <a href="/auth/google/login" class="btn" style="width: 100%; padding: 10px 14px; border-radius: var(--radius-1);">
         <svg style="width: 18px; height: 18px; margin-right: 8px;" viewBox="0 0 24 24">
@@ -36,6 +45,7 @@
         </div>
         <button type="submit" class="btn btn--brass" style="width: 100%;">Send sign-in link</button>
       </form>
+      {{end}}
     </div>
 
     {{if .Version}}
