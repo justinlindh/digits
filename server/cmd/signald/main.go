@@ -227,8 +227,13 @@ func run(ctx context.Context) error {
 	authStore.CookieDomain = cfg.CookieDomain
 
 	var emailSender email.Sender
+	var asyncMail *email.AsyncSender
 	if cfg.SMTPHost != "" {
-		emailSender = email.NewSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom)
+		// Async so a request's response time never depends on whether mail
+		// was sent: the login form answers identically, and just as fast,
+		// whether or not it decided to send a link.
+		asyncMail = email.NewAsyncSender(email.NewSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom))
+		emailSender = asyncMail
 		slog.Info("SMTP sender configured", "host", cfg.SMTPHost)
 	} else {
 		emailSender = email.NewLogSender()
@@ -375,7 +380,18 @@ func run(ctx context.Context) error {
 		// 3. Close remaining WebSocket connections gracefully (close frame 1001).
 		hub.DrainAndClose(drainCtx)
 
-		// 4. Shut down metrics listener.
+		// 4. Let queued mail finish handing off, within the same budget.
+		if asyncMail != nil {
+			mailDone := make(chan struct{})
+			go func() { asyncMail.Wait(); close(mailDone) }()
+			select {
+			case <-mailDone:
+			case <-drainCtx.Done():
+				slog.Warn("shutdown: queued email not fully sent")
+			}
+		}
+
+		// 5. Shut down metrics listener.
 		if metricsSrv != nil {
 			if err := metricsSrv.Shutdown(drainCtx); err != nil {
 				slog.Warn("metrics shutdown", "err", err)

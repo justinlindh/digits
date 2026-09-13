@@ -380,9 +380,10 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 	return sess, nil
 }
 
-// magicLinksPerHour caps how many links one address can be issued in an
-// hour, so nobody who knows an address can flood that inbox with sign-in
-// mail. Three covers a mistyped click or two without getting in the way.
+// magicLinksPerHour caps how many unconsumed links one address can be
+// issued in an hour, so nobody who knows an address can flood that inbox
+// with sign-in mail. A consumed link means the recipient acted on it, so it
+// does not count: signing in from several devices in a row is not a flood.
 const magicLinksPerHour = 3
 
 // CreateMagicLink generates a single-use login token for passwordless email auth.
@@ -402,7 +403,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, addr string, ttl time.Durat
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO magic_links (email, token_hash, expires_at, return_to)
 		 SELECT $1, $2, $3, $4
-		 WHERE (SELECT COUNT(*) FROM magic_links WHERE email = $1 AND created_at > NOW() - interval '1 hour') < $5`,
+		 WHERE (SELECT COUNT(*) FROM magic_links WHERE email = $1 AND used = FALSE AND created_at > NOW() - interval '1 hour') < $5`,
 		addr, hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""}, magicLinksPerHour,
 	)
 	if err != nil {

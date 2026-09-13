@@ -149,6 +149,16 @@ func TestCreateMagicLink_CapIsPerHour(t *testing.T) {
 	if _, err := s.CreateMagicLink(ctx, "hourly@example.com", MagicLinkTTL, ""); !errors.Is(err, ErrMagicLinkRateLimited) {
 		t.Fatalf("fourth link: err = %v, want ErrMagicLinkRateLimited", err)
 	}
+	// A consumed link is not a flood: marking one used frees a slot.
+	if _, err := s.db.ExecContext(ctx, `UPDATE magic_links SET used = TRUE WHERE email = $1 AND token_hash = (SELECT token_hash FROM magic_links WHERE email = $1 LIMIT 1)`, "hourly@example.com"); err != nil {
+		t.Fatalf("consume one link: %v", err)
+	}
+	if _, err := s.CreateMagicLink(ctx, "hourly@example.com", MagicLinkTTL, ""); err != nil {
+		t.Fatalf("link after one consumed: %v", err)
+	}
+	if _, err := s.CreateMagicLink(ctx, "hourly@example.com", MagicLinkTTL, ""); !errors.Is(err, ErrMagicLinkRateLimited) {
+		t.Fatalf("cap should be full again: err = %v, want ErrMagicLinkRateLimited", err)
+	}
 	// Age the earlier links out of the window; the cap releases.
 	if _, err := s.db.ExecContext(ctx, `UPDATE magic_links SET created_at = created_at - interval '2 hours' WHERE email = $1`, "hourly@example.com"); err != nil {
 		t.Fatalf("age links: %v", err)
