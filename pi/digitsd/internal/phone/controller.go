@@ -400,9 +400,7 @@ func (c *Controller) HandleSignal(msgType, sender string) {
 	case "answer":
 		c.onSignalAnswer(sender)
 	case "hangup":
-		c.onSignalHangup(sender)
-	case "connect_failed":
-		c.onConnectFailed(sender)
+		c.onSignalHangup(sender, "")
 	case "busy":
 		c.onSignalBusy(sender)
 	case "error":
@@ -410,6 +408,16 @@ func (c *Controller) HandleSignal(msgType, sender string) {
 	default:
 		slog.Warn("phone: unhandled signal", "type", msgType)
 	}
+}
+
+// HandleHangup processes a hangup from the signaling layer. reason is the
+// far end's hangup reason (see signal.HangupReason*), or "" for a plain
+// hangup; the local connect deadline reports through here too, with
+// signal.HangupReasonConnectTimeout, so both ends get the same treatment.
+func (c *Controller) HandleHangup(sender, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onSignalHangup(sender, reason)
 }
 
 // --- internal event handlers (called with lock held) ---
@@ -742,16 +750,8 @@ func (c *Controller) playRejectSequence() {
 
 	c.cb.SendTone(ToneStop)
 	c.cb.SendTone(ToneIntercept)
-	deadline := time.Now().Add(oneShotMaxDuration)
-	for c.cb.OncePlaying() {
-		time.Sleep(c.timing.RejectPollInterval)
-		if !checkState() {
-			return
-		}
-		if time.Now().After(deadline) {
-			slog.Error("phone: intercept tone timeout, aborting rejection")
-			return
-		}
+	if !c.awaitOneShot(checkState, "intercept") {
+		return
 	}
 
 	time.Sleep(c.timing.PostInterceptDelay)
@@ -897,7 +897,7 @@ func (c *Controller) onSignalAnswer(sender string) {
 	}
 }
 
-func (c *Controller) onSignalHangup(sender string) {
+func (c *Controller) onSignalHangup(sender, reason string) {
 	switch c.state {
 	case StateCALLING:
 		// Far end went away while we were ringing out (e.g. the server's
@@ -918,12 +918,25 @@ func (c *Controller) onSignalHangup(sender string) {
 		c.cb.SendLED(LEDOff)
 	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		slog.Info("phone: caller hung up during voicemail")
-		c.abortVoicemailLocked("")
+		c.abortVoicemailLocked(reason)
 	case StateCONNECTED:
+		if reason == signal.HangupReasonConnectTimeout {
+			// The answered call never got media (our own deadline or the far
+			// end's). Our hangup carries the reason so the server records it
+			// and the peer, if it has not already given up, plays the same
+			// announcement before the off-hook sequence.
+			slog.Warn("phone: answered call never connected", "peer", sender)
+			c.state = StateCALL_FAILED
+			c.cb.HangupCall(reason)
+			c.cb.SendTone(ToneStopAll)
+			c.cb.SendTone(ToneCallFailed)
+			c.runPermanentSignalTreatment(StateCALL_FAILED, "connect timeout")
+			return
+		}
 		c.state = StateREMOTE_HANGUP
 		c.cb.HangupCall("")
 		c.cb.SendTone(ToneStopAll)
-		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "remote hangup", "")
+		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "remote hangup")
 	case StateADD_CALLING, StateADD_PRIVATE:
 		if sender != "" && sender != c.addingPeer {
 			slog.Info("phone: hangup from unexpected peer", "state", c.state, "from", sender, "adding", c.addingPeer)
@@ -950,32 +963,30 @@ func (c *Controller) onTimeoutDialTone() {
 	}
 	c.state = StateOFFHOOK_TIMEOUT
 	c.cb.SendTone(ToneStopAll)
-	c.runPermanentSignalTreatment(StateOFFHOOK_TIMEOUT, "dial-tone timeout", "")
+	c.runPermanentSignalTreatment(StateOFFHOOK_TIMEOUT, "dial-tone timeout")
 }
 
-// onConnectFailed handles an answered 2-party call whose media path never
-// came up: either this daemon's post-answer connect deadline expired or the
-// far end's did and its hangup arrived carrying the connect_timeout reason.
-// Both ends run the same treatment: the call is torn down (our own hangup
-// carries the reason so the server records it and the peer, if it has not
-// already given up, plays the same announcement), then the spoken failure
-// clip leads into the off-hook sequence until the user hangs up.
-func (c *Controller) onConnectFailed(sender string) {
-	if c.state != StateCONNECTED {
-		slog.Info("phone: connect failure ignored", "state", c.state, "from", sender)
-		return
+// awaitOneShot blocks until the mixer's current one-shot clip finishes.
+// Returns false if the controller closed or keepGoing reports the caller
+// lost its state. A clip that overruns oneShotMaxDuration is logged and
+// treated as finished.
+func (c *Controller) awaitOneShot(keepGoing func() bool, what string) bool {
+	deadline := time.Now().Add(oneShotMaxDuration)
+	for c.cb.OncePlaying() {
+		if !c.sleepOrDone(c.timing.RejectPollInterval) || !keepGoing() {
+			return false
+		}
+		if time.Now().After(deadline) {
+			slog.Error("phone: one-shot clip overran, moving on", "what", what)
+			return true
+		}
 	}
-	slog.Warn("phone: answered call never connected", "peer", sender)
-	c.state = StateCALL_FAILED
-	c.cb.HangupCall(signal.HangupReasonConnectTimeout)
-	c.cb.SendTone(ToneStopAll)
-	c.runPermanentSignalTreatment(StateCALL_FAILED, "connect timeout", ToneCallFailed)
+	return true
 }
 
 // runPermanentSignalTreatment plays the 90s POTS off-hook sequence
 // (Bellcore GR-506-CORE permanent signal treatment) in a goroutine:
-//   0. Optional one-shot announcement (announce, a Tone* name; "" for none),
-//      played to completion first
+//   0. Any one-shot clip the caller queued (a spoken announcement) plays out
 //   1. Brief silence (~1s CO processing delay)
 //   2. Reorder tone (fast busy, 480+620 Hz) for ~45s
 //   3. Howler/ROH tone (loud multi-freq) for ~3 min
@@ -984,7 +995,7 @@ func (c *Controller) onConnectFailed(sender string) {
 // The sequence aborts at any step if the controller leaves treatmentState or
 // if a newer treatment run has started (tracked via treatmentGen). Caller must
 // hold c.mu and have already set c.state = treatmentState.
-func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason, announce string) {
+func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason string) {
 	c.treatmentGen++
 	gen := c.treatmentGen
 	slog.Info("phone: starting POTS off-hook sequence", "reason", reason)
@@ -995,20 +1006,9 @@ func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason, a
 			return c.state == treatmentState && c.treatmentGen == gen
 		}
 
-		if announce != "" {
-			c.cb.SendTone(announce)
-			deadline := time.Now().Add(oneShotMaxDuration)
-			for c.cb.OncePlaying() {
-				if !c.sleepOrDone(c.timing.RejectPollInterval) || !stillInTreatment() {
-					return
-				}
-				if time.Now().After(deadline) {
-					slog.Error("phone: off-hook announcement overran, moving on", "reason", reason)
-					break
-				}
-			}
+		if !c.awaitOneShot(stillInTreatment, reason) {
+			return
 		}
-
 		if !c.sleepOrDone(c.timing.TreatmentInitialDelay) || !stillInTreatment() {
 			return
 		}
@@ -1245,7 +1245,7 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 		StateADD_DIALING, StateADD_DIALTONE, StateADD_INTERCEPT:
 		c.state = StateREMOTE_HANGUP
 		c.cb.SendTone(ToneStop)
-		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "conference_end_"+reason, "")
+		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "conference_end_"+reason)
 	default:
 		c.state = StateIDLE
 		c.cb.SendTone(ToneStop)

@@ -137,6 +137,7 @@ type daemonCallbacks struct {
 	isRestartingICE      bool        // true while an ICE restart is in progress
 	restartTimer         *time.Timer // timeout for ICE restart attempt
 	disconnectTimer      *time.Timer // debounce before reacting to pion Disconnected
+	connectTimer         *time.Timer // post-answer deadline for the peer to reach Connected
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
 	// Protected by mu.

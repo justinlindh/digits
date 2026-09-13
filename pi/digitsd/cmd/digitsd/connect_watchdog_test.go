@@ -2,14 +2,13 @@ package main
 
 import (
 	"testing"
-	"time"
 
+	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 )
 
 // newIdlePeerManager returns a peer that never leaves the New state: no
-// offer/answer, no ICE agent, so a connect watchdog armed on it can only
-// expire.
+// offer/answer, no ICE agent, so a connect deadline on it can only expire.
 func newIdlePeerManager(t *testing.T) *owebrtc.PeerManager {
 	t.Helper()
 	pm, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
@@ -20,7 +19,7 @@ func newIdlePeerManager(t *testing.T) *owebrtc.PeerManager {
 	return pm
 }
 
-func TestConnectWatchdog_FailsCallWhenPeerNeverConnects(t *testing.T) {
+func TestConnectDeadline_FailsCallWhenPeerNeverConnected(t *testing.T) {
 	fc := &fakeController{}
 	d := newDispatchDaemon(t, fc)
 	pm := newIdlePeerManager(t)
@@ -28,27 +27,41 @@ func TestConnectWatchdog_FailsCallWhenPeerNeverConnects(t *testing.T) {
 	d.peerMgr = pm
 	d.mu.Unlock()
 
-	d.runConnectWatchdog(pm, "3140001", 100*time.Millisecond)
+	d.connectDeadline(pm, "3140001")
 
-	got, ok := fc.lastSignal()
-	if !ok || got != (signalCall{"connect_failed", "3140001"}) {
-		t.Fatalf("watchdog signalled %+v, want HandleSignal(connect_failed, 3140001)", got)
+	got, ok := fc.lastHangup()
+	if !ok || got != (hangupCall{"3140001", sigclient.HangupReasonConnectTimeout}) {
+		t.Fatalf("deadline reported %+v, want HandleHangup(3140001, connect_timeout)", got)
 	}
 }
 
-func TestConnectWatchdog_NoOpAfterPeerReplaced(t *testing.T) {
+func TestConnectDeadline_NoOpAfterPeerReplaced(t *testing.T) {
 	fc := &fakeController{}
 	d := newDispatchDaemon(t, fc)
-	pm := newIdlePeerManager(t)
 	// The call was torn down (or a new one started) before the deadline:
-	// d.peerMgr no longer points at the peer the watchdog was armed for.
+	// d.peerMgr no longer points at the peer the timer was armed for.
+	pm := newIdlePeerManager(t)
+
+	d.connectDeadline(pm, "3140001")
+
+	if got, ok := fc.lastHangup(); ok {
+		t.Fatalf("deadline reported %+v on a replaced peer, want nothing", got)
+	}
+}
+
+func TestConnectTimer_ArmAndCancel(t *testing.T) {
+	d := newDispatchDaemon(t, &fakeController{})
+	pm := newIdlePeerManager(t)
 	d.mu.Lock()
-	d.peerMgr = nil
-	d.mu.Unlock()
+	defer d.mu.Unlock()
+	d.peerMgr = pm
 
-	d.runConnectWatchdog(pm, "3140001", 100*time.Millisecond)
-
-	if got, ok := fc.lastSignal(); ok {
-		t.Fatalf("watchdog signalled %+v on a replaced peer, want nothing", got)
+	d.armConnectTimerLocked("3140001")
+	if d.connectTimer == nil {
+		t.Fatal("arm did not start the connect timer")
+	}
+	d.cancelConnectTimerLocked()
+	if d.connectTimer != nil {
+		t.Fatal("cancel left the connect timer armed")
 	}
 }

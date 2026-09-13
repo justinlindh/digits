@@ -21,6 +21,7 @@ type fakeController struct {
 	mu             sync.Mutex
 	state          phone.State
 	signals        []signalCall
+	hangups        []hangupCall
 	callReturnNum  string
 	callReturnRing string
 	confMember     []confMemberCall
@@ -31,6 +32,7 @@ type fakeController struct {
 }
 
 type signalCall struct{ msgType, sender string }
+type hangupCall struct{ sender, reason string }
 type confMemberCall struct {
 	confID  string
 	members []sigclient.ConferenceMemberInfo
@@ -47,6 +49,21 @@ func (f *fakeController) HandleSignal(msgType, sender string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.signals = append(f.signals, signalCall{msgType, sender})
+}
+
+func (f *fakeController) HandleHangup(sender, reason string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hangups = append(f.hangups, hangupCall{sender, reason})
+}
+
+func (f *fakeController) lastHangup() (hangupCall, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.hangups) == 0 {
+		return hangupCall{}, false
+	}
+	return f.hangups[len(f.hangups)-1], true
 }
 
 func (f *fakeController) State() phone.State {
@@ -160,19 +177,19 @@ func TestDispatchRouting_FSMDelegating(t *testing.T) {
 		fc := &fakeController{}
 		d := newDispatchDaemon(t, fc)
 		d.handleSignal(&sigclient.Message{Type: sigclient.TypeHangup, From: "3140003"})
-		got, _ := fc.lastSignal()
-		if got != (signalCall{"hangup", "3140003"}) {
-			t.Fatalf("hangup routed to %+v, want HandleSignal(hangup, 3140003)", got)
+		got, _ := fc.lastHangup()
+		if got != (hangupCall{"3140003", ""}) {
+			t.Fatalf("hangup routed to %+v, want HandleHangup(3140003, \"\")", got)
 		}
 	})
 
-	t.Run("hangup with connect_timeout reason", func(t *testing.T) {
+	t.Run("hangup carries the reason", func(t *testing.T) {
 		fc := &fakeController{}
 		d := newDispatchDaemon(t, fc)
 		d.handleSignal(&sigclient.Message{Type: sigclient.TypeHangup, From: "3140003", Reason: sigclient.HangupReasonConnectTimeout})
-		got, _ := fc.lastSignal()
-		if got != (signalCall{"connect_failed", "3140003"}) {
-			t.Fatalf("reasoned hangup routed to %+v, want HandleSignal(connect_failed, 3140003)", got)
+		got, _ := fc.lastHangup()
+		if got != (hangupCall{"3140003", sigclient.HangupReasonConnectTimeout}) {
+			t.Fatalf("reasoned hangup routed to %+v, want HandleHangup(3140003, connect_timeout)", got)
 		}
 	})
 

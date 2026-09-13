@@ -2,6 +2,7 @@ package phone
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +20,6 @@ type mockCallbacks struct {
 	rings              []bool
 	leds               []string
 	calls              []string
-	hangups            int
 	hangupReasons      []string // reason passed to each HangupCall, "" for a plain hangup
 	answers            int
 	callConnectedCalls int
@@ -98,7 +98,6 @@ func (m *mockCallbacks) AnswerCall() {
 func (m *mockCallbacks) HangupCall(reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.hangups++
 	m.hangupReasons = append(m.hangupReasons, reason)
 }
 func (m *mockCallbacks) NotifyCallConnected() {
@@ -269,7 +268,12 @@ func (m *mockCallbacks) Calls() []string {
 func (m *mockCallbacks) Hangups() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.hangups
+	return len(m.hangupReasons)
+}
+func (m *mockCallbacks) HangupReasons() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.hangupReasons...)
 }
 func (m *mockCallbacks) Answers() int {
 	m.mu.Lock()
@@ -2011,11 +2015,12 @@ func TestController_AbortVoicemailGreeting(t *testing.T) {
 		t.Fatalf("expected IDLE after abort, got %s", c.State())
 	}
 	cb.mu.Lock()
-	hangups := cb.hangups
 	leds := append([]string(nil), cb.leds...)
 	cb.mu.Unlock()
-	if hangups != 1 {
-		t.Fatalf("expected 1 HangupCall, got %d", hangups)
+	// Giving up on an unconnected caller reports connect_timeout so the
+	// caller gets the failure announcement too.
+	if got := cb.HangupReasons(); !slices.Equal(got, []string{signal.HangupReasonConnectTimeout}) {
+		t.Fatalf("HangupCall reasons = %v, want [%s]", got, signal.HangupReasonConnectTimeout)
 	}
 	if len(leds) == 0 || leds[len(leds)-1] != LEDOff {
 		t.Fatalf("expected final LED %q, got %v", LEDOff, leds)
