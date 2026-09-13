@@ -51,7 +51,7 @@ Go server running in the cloud. Responsibilities:
 - WebSocket relay for SDP offers/answers and ICE candidates
 - User authentication (magic links + Google OAuth)
 - Household and line management
-- Admin panel
+- Operator admin page (`/admin`, allowlisted accounts only; what it shows and never shows is in `server/docs/admin.md`)
 
 signald does not touch audio at any point.
 

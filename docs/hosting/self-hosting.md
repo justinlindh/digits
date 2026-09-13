@@ -90,6 +90,7 @@ All configuration lives in `server/.env`. Copy `server/.env.example` and fill it
 |---|---|
 | `BASE_URL` | Public URL of your server, e.g. `https://digits.example.com` |
 | `ADMIN_SECRET` | Secret protecting the internal stats endpoint. Generate with `openssl rand -hex 32`. |
+| `ADMIN_EMAILS` | Optional. Comma-separated account emails allowed to open the `/admin` page (accounts, households, devices, calls) and to disable or enable accounts from it. The page is linked in the nav only for these users and returns 404 for everyone else. Leave unset to disable it. |
 | `SMTP_HOST` | SMTP server hostname |
 | `SMTP_PORT` | SMTP port (usually 587 for STARTTLS) |
 | `SMTP_USER` | SMTP username |

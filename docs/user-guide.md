@@ -238,6 +238,9 @@ When the handset is resting on the cradle, the microphone is **physically discon
 **No screen, no apps, no tracking**  
 There's nothing to tap, no account to log into, no data to harvest. The phone doesn't know your location, your contacts, or your habits. It makes calls. That's all.
 
+**What the server operator can see**  
+Whoever runs your Digits server can see which accounts and phones exist, whether a phone is online and up to date, and can disable an account. They cannot hear calls, and they cannot see who called whom. If your household has call history turned off, the operator sees no call activity for your household at all.
+
 ---
 
 ## 10. Troubleshooting
