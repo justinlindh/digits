@@ -247,7 +247,10 @@ func run(ctx context.Context) error {
 	if cfg.DevMode {
 		slog.Warn("dev mode enabled: magic link URLs will be logged to stdout")
 	}
+	inviteStore := household.NewInviteStore(database.DB)
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, cfg.BaseURL, cfg.CookieDomain, loginTmpl, cfg.DevMode, mreg)
+	authHandlers.SetInviteChecker(inviteStore)
+	authHandlers.SetAlwaysAllowed(cfg.AdminEmails)
 
 	// Periodic cleanup: sessions, magic links, expired pairing codes. Ticker
 	// goroutine is bound to the same ctx as the main server so shutdown is
@@ -269,7 +272,7 @@ func run(ctx context.Context) error {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		InviteStore:    household.NewInviteStore(database.DB),
+		InviteStore:    inviteStore,
 		Emailer:        emailSender,
 		Metrics:        mreg,
 		RedisClient:    rateLimitRedis,
