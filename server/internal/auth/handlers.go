@@ -100,6 +100,14 @@ func (h *Handlers) mayReceiveMagicLink(ctx context.Context, addr string) (bool, 
 	return h.invites.HasPendingInvite(ctx, addr)
 }
 
+// suppressMagicLink is the response for a request the form accepts but will
+// not mail: indistinguishable from a real send to the caller, counted as
+// suppressed in metrics.
+func (h *Handlers) suppressMagicLink(w http.ResponseWriter, r *http.Request) {
+	h.observeMagicLink("suppressed")
+	http.Redirect(w, r, "/auth/login?success=check+your+email", http.StatusSeeOther)
+}
+
 // observeLogin and observeMagicLink guard the nil-metrics case so call sites
 // stay a single line.
 func (h *Handlers) observeLogin(method, result string) {
@@ -145,8 +153,7 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 	// Every path that declines to send lands on the same redirect as a real
 	// send, so the form never reveals whether an address is known.
 	if r.FormValue(honeypotField) != "" {
-		h.observeMagicLink("suppressed")
-		http.Redirect(w, r, "/auth/login?success=check+your+email", http.StatusSeeOther)
+		h.suppressMagicLink(w, r)
 		return
 	}
 	known, err := h.mayReceiveMagicLink(r.Context(), emailAddr)
@@ -156,15 +163,13 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !known {
-		h.observeMagicLink("suppressed")
-		http.Redirect(w, r, "/auth/login?success=check+your+email", http.StatusSeeOther)
+		h.suppressMagicLink(w, r)
 		return
 	}
 
 	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, MagicLinkTTL, returnTo)
 	if errors.Is(err, ErrMagicLinkRateLimited) {
-		h.observeMagicLink("suppressed")
-		http.Redirect(w, r, "/auth/login?success=check+your+email", http.StatusSeeOther)
+		h.suppressMagicLink(w, r)
 		return
 	}
 	if err != nil {
