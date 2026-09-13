@@ -24,12 +24,13 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-// voicemailConnectTimeout bounds how long the greeting goroutine waits for
-// the voicemail peer to reach Connected before abandoning the call. Live
-// calls connect in well under a second; a peer that has not connected after
-// this long never will, and holding the caller in dead air any longer just
-// wastes their patience.
-const voicemailConnectTimeout = 10 * time.Second
+// connectTimeout bounds how long an answered call may sit without its peer
+// reaching Connected before the daemon gives up on it: the greeting goroutine
+// for voicemail, and the connect watchdog armed on both ends of a live call
+// once the answer is exchanged. Live calls connect in well under a second; a
+// peer that has not connected after this long never will, and holding the
+// user in dead air any longer just wastes their patience.
+const connectTimeout = 10 * time.Second
 
 // playAnnouncementSequence plays multiple one-shot tones in sequence, waiting
 // for each to finish before starting the next. Blocks the calling goroutine
@@ -336,9 +337,9 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() bool {
 		// track write path surfaces no error on an unconnected transport, so
 		// playing on a wall clock alone means a caller on a peer that never
 		// connects hears dead air while the greeting plays into the void.
-		if !waitForPeerConnected(pm.ConnectionState, voicemailConnectTimeout) {
+		if !waitForPeerConnected(pm.ConnectionState, connectTimeout) {
 			if ctrl.AbortVoicemailGreeting() {
-				slog.Error("voicemail: peer never connected, abandoned call", "caller", caller, "timeout", voicemailConnectTimeout)
+				slog.Error("voicemail: peer never connected, abandoned call", "caller", caller, "timeout", connectTimeout)
 			}
 			return
 		}
@@ -536,7 +537,7 @@ func (d *daemonCallbacks) VoicemailRecordEnded() {
 	slog.Info("voicemail: recording ended", "peer", peer)
 
 	d.ctrl.Reset()
-	d.HangupCall()
+	d.HangupCall("")
 	d.evaluateLED()
 	// At-cap finalize already ran in the OnTrack loop before VoicemailRecordEnded
 	// was scheduled, so HangupCall's finalizedVoicemail branch did not fire and

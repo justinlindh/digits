@@ -137,6 +137,7 @@ type daemonCallbacks struct {
 	isRestartingICE      bool        // true while an ICE restart is in progress
 	restartTimer         *time.Timer // timeout for ICE restart attempt
 	disconnectTimer      *time.Timer // debounce before reacting to pion Disconnected
+	connectTimer         *time.Timer // post-answer deadline for the peer to reach Connected
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
 	// Protected by mu.
@@ -345,6 +346,8 @@ func (d *daemonCallbacks) SendTone(name string) {
 		d.mixer.PlayOnce("intercept")
 	case phone.ToneDisconnected:
 		d.mixer.PlayOnce("disconnected")
+	case phone.ToneCallFailed:
+		d.mixer.PlayOnce("call_failed")
 	case phone.ToneStop:
 		d.mixer.StopTone()
 	case phone.ToneStopAll:
@@ -2574,7 +2577,7 @@ func reconnectLoop(
 			} else {
 				slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
 				cb.TearDownAllMeshPeers()
-				cb.HangupCall()
+				cb.HangupCall("")
 				ctrl.Reset()
 			}
 		}
