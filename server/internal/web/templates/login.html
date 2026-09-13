@@ -42,7 +42,7 @@
         </div>
         <button type="submit" class="btn btn--brass" style="width: 100%;">Send sign-in link</button>
       </form>
-      <p class="muted" style="font-size: 12px; text-align: center; margin: 14px 0 0;">Sign-in links only go to addresses that already have an account or an invite. New here? Use Google above, or ask a family member on Digits to invite you.</p>
+      <p class="muted" style="font-size: 12px; text-align: center; margin: 14px 0 0;">Sign-in links only go to addresses that already have an account or an invite. New here? {{if .GoogleEnabled}}Use Google above, or ask{{else}}Ask{{end}} a family member on Digits to invite you.</p>
     </div>
 
     {{if .Version}}
