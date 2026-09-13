@@ -6,7 +6,7 @@
  *      DEV_MODE=true this creates a user+session, sets the cookie, and
  *      redirects to /. Returns 404 when dev mode is off.
  *   1. If E2E_SESSION_COOKIE is set, inject it directly (fastest, no UI needed).
- *   2. If E2E_MAGIC_TOKEN is set, redeem it via GET /auth/magic/<token>.
+ *   2. If E2E_MAGIC_TOKEN is set, open /auth/magic/<token> and press the button.
  *   3. Request a magic link via the login form (needs devMode).
  *   4. Fallback: write an empty storageState so dependent tests still run and
  *      individually detect the missing auth.
@@ -16,7 +16,7 @@
  *
  * Environment variables:
  *   E2E_SESSION_COOKIE  -- raw value of the `digits_session` cookie (skip UI login)
- *   E2E_MAGIC_TOKEN     -- raw magic link token to redeem (we GET /auth/magic/<token>)
+ *   E2E_MAGIC_TOKEN     -- raw magic link token to redeem (we open /auth/magic/<token> and submit its form)
  *   E2E_EMAIL           -- email address to use (default: e2e@example.com)
  *   BASE_URL            -- server base URL (default: http://localhost:8080)
  */
@@ -98,7 +98,10 @@ setup('authenticate', async ({ page, context }) => {
   const magicToken = process.env.E2E_MAGIC_TOKEN;
   if (magicToken) {
     console.log(`[setup] Redeeming magic link token: ${magicToken.substring(0, 8)}...`);
+    // The link renders a confirmation page; the button's POST is what
+    // consumes the token.
     await page.goto(`/auth/magic/${magicToken}`);
+    await page.getByRole('button', { name: 'Sign in to Digits' }).click();
     await page.waitForURL(url => !url.toString().includes('/auth/magic'), { timeout: 8000 });
     if (!page.url().includes('/auth/login')) {
       await context.storageState({ path: AUTH_FILE });
