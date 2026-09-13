@@ -33,6 +33,9 @@ var (
 	// ErrAccountDisabled is returned by CreateSession when an operator has
 	// disabled the account. Login paths map it to a user-facing message.
 	ErrAccountDisabled = errors.New("account disabled")
+	// ErrMagicLinkRateLimited is returned by CreateMagicLink when the address
+	// has hit its hourly cap. The request handler treats it as a silent skip.
+	ErrMagicLinkRateLimited = errors.New("magic link rate limited for address")
 )
 
 // User represents a registered user account.
@@ -377,21 +380,41 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 	return sess, nil
 }
 
+// magicLinksPerHour caps how many unconsumed links one address can be
+// issued in an hour, so nobody who knows an address can flood that inbox
+// with sign-in mail. A consumed link means the recipient acted on it, so it
+// does not count: signing in from several devices in a row is not a flood.
+const magicLinksPerHour = 3
+
 // CreateMagicLink generates a single-use login token for passwordless email auth.
 // Returns the raw token to embed in the email link. returnTo is an optional
 // path to redirect to after authentication; pass "" to use the default.
+// Returns ErrMagicLinkRateLimited when the address has already been issued
+// magicLinksPerHour links in the last hour.
 func (s *Store) CreateMagicLink(ctx context.Context, addr string, ttl time.Duration, returnTo string) (string, error) {
 	token, err := tokens.RandomHex(32)
 	if err != nil {
 		return "", err
 	}
 	hash := tokens.Hash(token)
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO magic_links (email, token_hash, expires_at, return_to) VALUES ($1, $2, $3, $4)`,
-		email.Normalize(addr), hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
+	addr = email.Normalize(addr)
+	// The cap is folded into the INSERT so it holds across replicas without a
+	// separate read: the row is written only if the hourly count is under it.
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO magic_links (email, token_hash, expires_at, return_to)
+		 SELECT $1, $2, $3, $4
+		 WHERE (SELECT COUNT(*) FROM magic_links WHERE email = $1 AND used = FALSE AND created_at > NOW() - interval '1 hour') < $5`,
+		addr, hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""}, magicLinksPerHour,
 	)
 	if err != nil {
 		return "", fmt.Errorf("create magic link: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("create magic link: %w", err)
+	}
+	if n == 0 {
+		return "", ErrMagicLinkRateLimited
 	}
 	return token, nil
 }
@@ -432,7 +455,9 @@ func (s *Store) CleanupExpired(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < NOW()`); err != nil {
 		return fmt.Errorf("cleanup expired sessions: %w", err)
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM magic_links WHERE expires_at < NOW() OR used = TRUE`); err != nil {
+	// Spent and expired links are kept for an hour after issue so the
+	// per-address hourly cap in CreateMagicLink still counts them.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM magic_links WHERE (expires_at < NOW() OR used = TRUE) AND created_at < NOW() - interval '1 hour'`); err != nil {
 		return fmt.Errorf("cleanup expired magic links: %w", err)
 	}
 	return nil

@@ -34,8 +34,15 @@
           <label for="email" class="field__label">Email address</label>
           <input type="email" id="email" name="email" required placeholder="you@example.com" class="field__input">
         </div>
+        {{/* Honeypot: hidden from people, filled by form bots. The server
+             drops any submission that carries a value here. */}}
+        <div class="hp" aria-hidden="true">
+          <label for="website">Website</label>
+          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
         <button type="submit" class="btn btn--brass" style="width: 100%;">Send sign-in link</button>
       </form>
+      <p class="muted" style="font-size: 12px; text-align: center; margin: 14px 0 0;">Sign-in links only go to addresses that already have an account or an invite. New here? {{if .GoogleEnabled}}Use Google above, or ask{{else}}Ask{{end}} a family member on Digits to invite you.</p>
     </div>
 
     {{if .Version}}

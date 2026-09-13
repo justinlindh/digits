@@ -335,8 +335,9 @@ var (
 		"failure": {},
 	}
 	validMagicLinkEvents = map[string]struct{}{
-		"issued":   {},
-		"consumed": {},
+		"issued":     {},
+		"consumed":   {},
+		"suppressed": {}, // request accepted but no mail sent: unknown address, honeypot, or per-address cap
 	}
 	validPairingResults = map[string]struct{}{
 		"success": {},

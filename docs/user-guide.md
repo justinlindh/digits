@@ -28,7 +28,7 @@ It's a real telephone. It makes real calls. That's it.
 **What you'll also need:**
 - A Wi-Fi network with internet access
 - A smartphone or laptop (for the one-time setup, and to pair the phone)
-- A Digits account -- sign in at `app.digits.family` to pair the phone and choose its number
+- A Digits account -- sign in at `app.digits.family` to pair the phone and choose its number. Sign in with Google, or with the link that arrives when a family member already on Digits invites you. The email sign-in form only sends links to addresses that already have an account or an invite.
 
 ---
 

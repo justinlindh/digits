@@ -2459,3 +2459,7 @@ html[data-theme="dark"] .changelog-dialog {
 }
 .rail__hh-option:hover { background: var(--line); }
 .rail__hh-option.is-active { font-weight: 600; }
+
+/* Honeypot form field: off-canvas rather than display:none so naive bots
+   that skip hidden inputs still see and fill it. */
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

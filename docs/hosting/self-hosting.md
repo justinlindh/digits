@@ -90,7 +90,7 @@ All configuration lives in `server/.env`. Copy `server/.env.example` and fill it
 |---|---|
 | `BASE_URL` | Public URL of your server, e.g. `https://digits.example.com` |
 | `ADMIN_SECRET` | Secret protecting the internal stats endpoint. Generate with `openssl rand -hex 32`. |
-| `ADMIN_EMAILS` | Optional. Comma-separated account emails allowed to open the `/admin` page (accounts, households, devices, calls) and to disable or enable accounts from it. The page is linked in the nav only for these users and returns 404 for everyone else. Leave unset to disable it. |
+| `ADMIN_EMAILS` | Comma-separated account emails allowed to open the `/admin` page (accounts, households, devices, calls) and to disable or enable accounts from it. The page is linked in the nav only for these users and returns 404 for everyone else. These addresses can also always request a magic link, which is how the first account on a fresh install gets created; every other address needs an existing account, a household invite, or Google sign-in. Set it to your own address. |
 | `SMTP_HOST` | SMTP server hostname |
 | `SMTP_PORT` | SMTP port (usually 587 for STARTTLS) |
 | `SMTP_USER` | SMTP username |
@@ -343,6 +343,7 @@ See the [Helm chart README](../../charts/digits/README.md) for signald installat
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Magic link email never arrives | SMTP misconfigured | Check `SMTP_HOST/PORT/USER/PASS`. Run `docker compose logs signald` and look for mail errors. Test with `swaks` or your provider's SMTP tester. |
+| Magic link never arrives for a brand-new address, but the page says "check your email" | The address has no account and no pending invite, so no mail is sent (the form never reveals which addresses are known) | Put the operator's address in `ADMIN_EMAILS`; those addresses can always request a link, which is how the first account gets created. Everyone else joins through Google sign-in or a household invite. |
 | "Link expired" on login | Token TTL passed (15 min) | Request a new magic link. If this happens constantly, check server clock (`timedatectl`). |
 | Phone won't connect | Wrong WebSocket URL or TLS error | Verify `-signald` flag on the Pi points to `wss://your-domain.com/ws`. Check `journalctl -u digitsd` on the Pi. |
 | Calls fail across networks | No TURN server | Set up coturn and configure `SIGNALD_TURN_*` env vars. See [TURN / NAT Traversal](#turn--nat-traversal). |

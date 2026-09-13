@@ -378,6 +378,20 @@ func TestCleanupExpired(t *testing.T) {
 	if !errors.Is(err, ErrInvalidSession) {
 		t.Errorf("expected ErrInvalidSession after cleanup, got %v", err)
 	}
+
+	// The expired link is kept for an hour after issue so the per-address
+	// cap still counts it, then dropped.
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM magic_links WHERE token_hash = $1`, mlHash).Scan(&n); err != nil || n != 1 {
+		t.Errorf("fresh expired link after cleanup: count=%d err=%v, want kept", n, err)
+	}
+	_, _ = s.db.Exec(`UPDATE magic_links SET created_at = NOW() - interval '2 hours' WHERE token_hash = $1`, mlHash)
+	if err := s.CleanupExpired(context.Background()); err != nil {
+		t.Fatalf("CleanupExpired: %v", err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM magic_links WHERE token_hash = $1`, mlHash).Scan(&n); err != nil || n != 0 {
+		t.Errorf("aged expired link after cleanup: count=%d err=%v, want gone", n, err)
+	}
 }
 
 func TestSetAndLoadCRTMode(t *testing.T) {

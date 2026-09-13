@@ -91,7 +91,7 @@ Visit `http://localhost:8443` for the web UI. New users are prompted to create a
 | `DATABASE_URL` | (required)                       | Postgres connection string            |
 | `BASE_URL`     | `https://app.digits.family`      | Public base URL for links and OAuth   |
 | `ADMIN_SECRET` | (required)                       | Shared secret for internal stats API  |
-| `ADMIN_EMAILS` | (empty)                          | Comma-separated account emails allowed to view the unlinked `/admin` page. Empty disables it. |
+| `ADMIN_EMAILS` | (empty)                          | Comma-separated account emails allowed to view the `/admin` page. These addresses can also always request a magic link (the bootstrap path for a fresh install). Empty disables the page. |
 | `SIGNALD_TRUSTED_PROXIES` | `1`                   | Reverse-proxy hops between signald and clients, used to resolve the real client IP from `X-Forwarded-For` for rate limiting. The default fits one proxy in front (Caddy or Traefik). Set to `0` when signald is exposed directly; raise it when another proxy (CDN, load balancer) sits in front of yours. |
 | `SIGNALD_WS_RATE_LIMIT` | `30`                  | WebSocket upgrade rate limit per client IP per minute. Raise it for load testing or when many devices share one egress IP. |
 
@@ -235,7 +235,7 @@ See `.env.example` for a starter config file.
 | Route                     | Description               |
 |---------------------------|---------------------------|
 | `/auth/login`             | Login page                |
-| `POST /auth/magic`        | Request magic link email  |
+| `POST /auth/magic`        | Request magic link email. Sent only to addresses with an account or a pending household invite; every other submission gets the same "check your email" reply and no mail. Honeypot field `website`; at most 3 links per address per hour |
 | `/auth/magic/{token}`     | Verify magic link         |
 | `/auth/google/login`      | Google OAuth login        |
 | `/auth/google/callback`   | Google OAuth callback     |

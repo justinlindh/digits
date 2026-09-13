@@ -181,6 +181,24 @@ func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID st
 	return invites, rows.Err()
 }
 
+// HasPendingInvite reports whether any household holds a pending, unexpired
+// invite for addr. The login form uses it to decide whether an address with
+// no account may receive a magic link.
+func (s *InviteStore) HasPendingInvite(ctx context.Context, addr string) (bool, error) {
+	addr = email.Normalize(addr)
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM household_invites
+			WHERE email = $1 AND status = 'pending' AND expires_at > NOW()
+		)
+	`, addr).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check pending invite: %w", err)
+	}
+	return exists, nil
+}
+
 // IsPendingForHouseholdEmail reports whether a pending, unexpired invite
 // already exists for email in householdID.
 func (s *InviteStore) IsPendingForHouseholdEmail(ctx context.Context, householdID, addr string) (bool, error) {
