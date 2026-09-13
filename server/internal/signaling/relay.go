@@ -34,6 +34,9 @@ const (
 	// hangupReasonPeerOffline is recorded when the grace window expires
 	// without the dropped phone returning.
 	hangupReasonPeerOffline = "peer_offline"
+
+	// hangupReasonMaxLen bounds a client-supplied hangup reason token.
+	hangupReasonMaxLen = 32
 )
 
 // CallTracker is the subset of *calls.Tracker that the Relay needs to track
@@ -512,7 +515,7 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 // it is persisted and forwarded to the peer, so anything else is dropped
 // rather than stored.
 func hangupReason(reason string) string {
-	if reason == "" || len(reason) > 32 {
+	if reason == "" || len(reason) > hangupReasonMaxLen {
 		return ""
 	}
 	for _, c := range reason {

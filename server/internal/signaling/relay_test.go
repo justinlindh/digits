@@ -1747,13 +1747,17 @@ func TestHangupReasonForwardedAndRecorded(t *testing.T) {
 
 func TestHangupReason_ValidatesToken(t *testing.T) {
 	cases := map[string]string{
-		"":                      "",
-		"connect_timeout":       "connect_timeout",
-		"peer_offline":          "peer_offline",
-		"Connect Timeout":       "",
-		"drop table":            "",
-		"x'; --":                "",
-		strings.Repeat("a", 33): "",
+		"":                                      "",
+		"connect_timeout":                       "connect_timeout",
+		"peer_offline":                          "peer_offline",
+		"Connect Timeout":                       "",
+		"drop table":                            "",
+		"x'; --":                                "",
+		"peer_offline_2":                        "",
+		"_leading":                              "_leading",
+		"trailing_":                             "trailing_",
+		strings.Repeat("a", hangupReasonMaxLen): strings.Repeat("a", hangupReasonMaxLen),
+		strings.Repeat("a", hangupReasonMaxLen+1): "",
 	}
 	for in, want := range cases {
 		if got := hangupReason(in); got != want {
