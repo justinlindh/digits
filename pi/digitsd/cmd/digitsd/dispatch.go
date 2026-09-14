@@ -20,6 +20,7 @@ import (
 // serial port or audio path. *phone.Controller satisfies it.
 type signalController interface {
 	HandleSignal(msgType, sender string)
+	HandleHangup(sender, reason string)
 	State() phone.State
 	SetCallReturnNumber(number string)
 	ResetToDialtone()
@@ -67,10 +68,11 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 				slog.Info("webrtc: set remote answer", "from", msg.From, "bytes", len(msg.SDP))
 			}
 		}
+		d.armConnectTimerLocked(msg.From)
 		d.mu.Unlock()
 		ctrl.HandleSignal("answer", msg.From)
 	case sigclient.TypeHangup:
-		ctrl.HandleSignal("hangup", msg.From)
+		ctrl.HandleHangup(msg.From, msg.Reason)
 	case sigclient.TypeBusy:
 		if d.callReturnOrigin.Load() {
 			d.callReturnOrigin.Store(false)

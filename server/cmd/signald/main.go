@@ -227,8 +227,13 @@ func run(ctx context.Context) error {
 	authStore.CookieDomain = cfg.CookieDomain
 
 	var emailSender email.Sender
+	var asyncMail *email.AsyncSender
 	if cfg.SMTPHost != "" {
-		emailSender = email.NewSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom)
+		// Async so a request's response time never depends on whether mail
+		// was sent: the login form answers identically, and just as fast,
+		// whether or not it decided to send a link.
+		asyncMail = email.NewAsyncSender(email.NewSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom))
+		emailSender = asyncMail
 		slog.Info("SMTP sender configured", "host", cfg.SMTPHost)
 	} else {
 		emailSender = email.NewLogSender()
@@ -247,7 +252,10 @@ func run(ctx context.Context) error {
 	if cfg.DevMode {
 		slog.Warn("dev mode enabled: magic link URLs will be logged to stdout")
 	}
+	inviteStore := household.NewInviteStore(database.DB)
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, cfg.BaseURL, cfg.CookieDomain, loginTmpl, cfg.DevMode, mreg)
+	authHandlers.SetInviteChecker(inviteStore)
+	authHandlers.SetAlwaysAllowed(cfg.AdminEmails)
 
 	// Periodic cleanup: sessions, magic links, expired pairing codes. Ticker
 	// goroutine is bound to the same ctx as the main server so shutdown is
@@ -269,7 +277,7 @@ func run(ctx context.Context) error {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		InviteStore:    household.NewInviteStore(database.DB),
+		InviteStore:    inviteStore,
 		Emailer:        emailSender,
 		Metrics:        mreg,
 		RedisClient:    rateLimitRedis,
@@ -372,7 +380,18 @@ func run(ctx context.Context) error {
 		// 3. Close remaining WebSocket connections gracefully (close frame 1001).
 		hub.DrainAndClose(drainCtx)
 
-		// 4. Shut down metrics listener.
+		// 4. Let queued mail finish handing off, within the same budget.
+		if asyncMail != nil {
+			mailDone := make(chan struct{})
+			go func() { asyncMail.Wait(); close(mailDone) }()
+			select {
+			case <-mailDone:
+			case <-drainCtx.Done():
+				slog.Warn("shutdown: queued email not fully sent")
+			}
+		}
+
+		// 5. Shut down metrics listener.
 		if metricsSrv != nil {
 			if err := metricsSrv.Shutdown(drainCtx); err != nil {
 				slog.Warn("metrics shutdown", "err", err)

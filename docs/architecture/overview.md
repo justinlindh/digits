@@ -138,6 +138,7 @@ Bandwidth per active TURN-relayed call: ~40kbps per direction. Negligible at sma
 - Mid-call media recovery on transient connection drops: 4s `Disconnected` debounce, then caller-initiated ICE restart with a 25s recovery deadline; recovery is also driven on either side from a signaling-WebSocket reconnect when local media has dropped
 - Signaling-reconnect grace window: the server holds a 2-party call open for 20s after the WebSocket drops so a phone can resume the call instead of losing it; new callers reaching a grace-held line get busy
 - Connection failure detection (hangup after recovery deadline)
+- Post-answer connect deadline: an answered call whose media path is not up within 10s is failed on both ends with a hangup carrying `reason: connect_timeout`; the server records the reason in the call history and forwards it, and both phones play a spoken "call could not be connected" announcement followed by reorder tone instead of sitting in dead air
 - Mechanical bell, dial tone, ringback, and busy tone
 - Household linking via invite codes
 - Device pairing via one-time codes
