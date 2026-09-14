@@ -30,6 +30,12 @@ var (
 	ErrUserNotFound     = errors.New("user not found")
 	ErrInvalidSession   = errors.New("invalid or expired session")
 	ErrInvalidMagicLink = errors.New("invalid, expired, or already used magic link")
+	// ErrAccountDisabled is returned by CreateSession when an operator has
+	// disabled the account. Login paths map it to a user-facing message.
+	ErrAccountDisabled = errors.New("account disabled")
+	// ErrMagicLinkRateLimited is returned by CreateMagicLink when the address
+	// has hit its hourly cap. The request handler treats it as a silent skip.
+	ErrMagicLinkRateLimited = errors.New("magic link rate limited for address")
 )
 
 // User represents a registered user account.
@@ -44,6 +50,14 @@ type User struct {
 	Appearance  Appearance
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
+	// DisabledAt is set when an operator disables the account. A disabled
+	// user cannot sign in and any existing session is rejected.
+	DisabledAt *time.Time
+}
+
+// Disabled reports whether an operator has disabled the account.
+func (u *User) Disabled() bool {
+	return u != nil && u.DisabledAt != nil
 }
 
 // Session represents an authenticated browser session.
@@ -68,13 +82,13 @@ func NewStore(db *sql.DB) *Store {
 // userColumns lists every users-table column scanned into User. Kept in
 // one place so adding or renaming a column does not require chasing three
 // SELECT/RETURNING lists and three Scan argument lists.
-const userColumns = `id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at`
+const userColumns = `id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at, disabled_at`
 
 // scanUser materializes a User from any row whose columns match userColumns
 // in order.
 func scanUser(row dbutil.RowScanner) (*User, error) {
 	u := &User{}
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt, &u.DisabledAt); err != nil {
 		return nil, err
 	}
 	return u, nil
@@ -243,17 +257,62 @@ func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Durat
 		return "", nil, err
 	}
 	hash := tokens.Hash(token)
+	// The INSERT is conditioned on the account being enabled so every login
+	// path is refused in one place, with no window between a check and the
+	// insert.
 	row := s.db.QueryRowContext(ctx,
 		`INSERT INTO sessions (user_id, token_hash, expires_at)
-		 VALUES ($1, $2, $3)
+		 SELECT id, $2, $3 FROM users WHERE id = $1 AND disabled_at IS NULL
 		 RETURNING `+sessionColumns,
 		userID, hash, time.Now().Add(ttl),
 	)
 	sess, err := scanSession(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, ErrAccountDisabled
+	}
 	if err != nil {
 		return "", nil, fmt.Errorf("create session: %w", err)
 	}
 	return token, sess, nil
+}
+
+// SetDisabled flips an operator disable on or off. Disabling also deletes
+// every session for the user in the same transaction so they are signed out
+// at once; enabling leaves them to sign in again.
+func (s *Store) SetDisabled(ctx context.Context, userID string, disabled bool) error {
+	return dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		var res sql.Result
+		var err error
+		if disabled {
+			res, err = tx.ExecContext(ctx, `UPDATE users SET disabled_at = NOW() WHERE id = $1 AND disabled_at IS NULL`, userID)
+		} else {
+			res, err = tx.ExecContext(ctx, `UPDATE users SET disabled_at = NULL WHERE id = $1`, userID)
+		}
+		if err != nil {
+			return fmt.Errorf("set disabled: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("set disabled: %w", err)
+		}
+		if n == 0 {
+			// Either no such user or already in the requested state; tell
+			// the caller apart by existence.
+			var exists bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)`, userID).Scan(&exists); err != nil {
+				return fmt.Errorf("set disabled: %w", err)
+			}
+			if !exists {
+				return ErrUserNotFound
+			}
+		}
+		if disabled {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
+				return fmt.Errorf("revoke sessions: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // ValidateSession looks up a session by its raw token and checks it hasn't expired.
@@ -321,21 +380,41 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 	return sess, nil
 }
 
+// magicLinksPerHour caps how many unconsumed links one address can be
+// issued in an hour, so nobody who knows an address can flood that inbox
+// with sign-in mail. A consumed link means the recipient acted on it, so it
+// does not count: signing in from several devices in a row is not a flood.
+const magicLinksPerHour = 3
+
 // CreateMagicLink generates a single-use login token for passwordless email auth.
 // Returns the raw token to embed in the email link. returnTo is an optional
 // path to redirect to after authentication; pass "" to use the default.
+// Returns ErrMagicLinkRateLimited when the address has already been issued
+// magicLinksPerHour links in the last hour.
 func (s *Store) CreateMagicLink(ctx context.Context, addr string, ttl time.Duration, returnTo string) (string, error) {
 	token, err := tokens.RandomHex(32)
 	if err != nil {
 		return "", err
 	}
 	hash := tokens.Hash(token)
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO magic_links (email, token_hash, expires_at, return_to) VALUES ($1, $2, $3, $4)`,
-		email.Normalize(addr), hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
+	addr = email.Normalize(addr)
+	// The cap is folded into the INSERT so it holds across replicas without a
+	// separate read: the row is written only if the hourly count is under it.
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO magic_links (email, token_hash, expires_at, return_to)
+		 SELECT $1, $2, $3, $4
+		 WHERE (SELECT COUNT(*) FROM magic_links WHERE email = $1 AND used = FALSE AND created_at > NOW() - interval '1 hour') < $5`,
+		addr, hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""}, magicLinksPerHour,
 	)
 	if err != nil {
 		return "", fmt.Errorf("create magic link: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("create magic link: %w", err)
+	}
+	if n == 0 {
+		return "", ErrMagicLinkRateLimited
 	}
 	return token, nil
 }
@@ -376,7 +455,9 @@ func (s *Store) CleanupExpired(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < NOW()`); err != nil {
 		return fmt.Errorf("cleanup expired sessions: %w", err)
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM magic_links WHERE expires_at < NOW() OR used = TRUE`); err != nil {
+	// Spent and expired links are kept for an hour after issue so the
+	// per-address hourly cap in CreateMagicLink still counts them.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM magic_links WHERE (expires_at < NOW() OR used = TRUE) AND created_at < NOW() - interval '1 hour'`); err != nil {
 		return fmt.Errorf("cleanup expired magic links: %w", err)
 	}
 	return nil

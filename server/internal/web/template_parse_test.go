@@ -18,6 +18,7 @@ func TestTemplatePagesParse(t *testing.T) {
 		"settings.html",
 		"onboard.html",
 		"links.html",
+		"admin.html",
 	}
 	for _, page := range pages {
 		t.Run(page, func(t *testing.T) {

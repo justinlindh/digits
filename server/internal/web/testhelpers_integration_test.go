@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
+	"github.com/justinlindh/digits/server/internal/admin"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
@@ -155,7 +156,9 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}
+	inviteStore := household.NewInviteStore(database.DB)
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false, nil)
+	authHandlers.SetInviteChecker(inviteStore)
 
 	return Deps{
 		LineStore:      lineStore,
@@ -171,8 +174,9 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		InviteStore:    household.NewInviteStore(database.DB),
+		InviteStore:    inviteStore,
 		Emailer:        emailSender,
+		AdminStore:     admin.NewStore(database.DB),
 	}, authStore
 }
 

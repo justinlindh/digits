@@ -31,6 +31,9 @@
         <a class="am-tab {{if eq .Page "calls"}}is-active{{end}}" href="/calls">Calls</a>
         {{end}}
         <a class="am-tab {{if eq .Page "settings"}}is-active{{end}}" href="/settings">Settings</a>
+        {{if .IsAdmin}}
+        <a class="am-tab {{if eq .Page "admin"}}is-active{{end}}" href="/admin">Admin</a>
+        {{end}}
       </nav>
 
       {{if .HouseholdName}}

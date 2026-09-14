@@ -1,0 +1,205 @@
+{{define "title"}}Admin{{end}}
+
+{{define "content"}}
+<div class="page">
+
+  <header class="page__head">
+    <h1 class="page__title">Admin</h1>
+    <div class="muted hstack hstack--wrap" style="font-size: 12px;">
+      {{if .LatestPiVersion}}<span class="chip"><span class="chip__dot"></span>pi <span class="num">{{.LatestPiVersion}}</span></span>{{end}}
+      {{if .LatestFirmwareVersion}}<span class="chip"><span class="chip__dot"></span>fw <span class="num">{{.LatestFirmwareVersion}}</span></span>{{end}}
+      <span class="chip"><span class="chip__dot"></span>Last {{.WindowDays}} days</span>
+      <span class="num muted">{{.Timezone}}</span>
+    </div>
+  </header>
+
+  <div class="strip">
+    <div class="strip__cell">
+      <p class="strip__label">Accounts</p>
+      <div class="strip__value">{{.Totals.Users}}</div>
+    </div>
+    <div class="strip__cell">
+      <p class="strip__label">Households</p>
+      <div class="strip__value">{{.Totals.Households}}</div>
+    </div>
+    <div class="strip__cell">
+      <p class="strip__label">Lines</p>
+      <div class="strip__value">{{.Totals.Lines}}</div>
+    </div>
+    <div class="strip__cell">
+      <p class="strip__label">Paired devices</p>
+      <div class="strip__value">{{.Totals.PairedDevices}}</div>
+    </div>
+    <div class="strip__cell">
+      <p class="strip__label">Online now</p>
+      <div class="strip__value{{if gt .OnlineLines 0}} strip__value--forest{{end}}">{{.OnlineLines}}</div>
+    </div>
+    <div class="strip__cell">
+      <p class="strip__label">Active calls</p>
+      <div class="strip__value{{if gt .ActiveCalls 0}} strip__value--brass{{end}}">{{.ActiveCalls}}</div>
+    </div>
+    <div class="strip__cell">
+      <p class="strip__label">Calls, {{.WindowDays}}d</p>
+      <div class="strip__value">{{.Totals.Calls}}</div>
+    </div>
+  </div>
+
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Households</h2>
+      <span class="panel__title-sub">Members, lines, and activity</span>
+    </header>
+    {{if .Households}}
+    <div style="overflow-x: auto;">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Household</th>
+            <th>Members</th>
+            <th>Lines</th>
+            <th class="r">Devices</th>
+            <th class="r">Online</th>
+            <th class="r">Calls, {{$.WindowDays}}d</th>
+            <th class="r">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Households}}
+          <tr>
+            <td style="color: var(--ink); white-space: nowrap;">{{.Name}}</td>
+            <td class="muted" style="font-size: 12.5px; white-space: nowrap;">{{range $i, $m := .Members}}{{if $i}}<br>{{end}}{{$m}}{{end}}</td>
+            <td class="num" style="white-space: nowrap;">{{range $i, $n := .Lines}}{{if $i}}<br>{{end}}{{fmtPhone $n}}{{end}}</td>
+            <td class="num r">{{.PairedDevices}}</td>
+            <td class="num r">{{if gt .Online 0}}<span class="chip chip--on"><span class="chip__dot"></span>{{.Online}} online</span>{{else}}<span class="muted">0 online</span>{{end}}</td>
+            <td class="num r">{{if .CallHistoryEnabled}}{{.Calls}}{{else}}<span class="muted" title="This household keeps no call history, so none is shown here either">&ndash;</span>{{end}}</td>
+            <td class="num r muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="empty"><div>No households yet.</div></div>
+    {{end}}
+  </section>
+
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Devices</h2>
+      <span class="panel__title-sub">Versions are reported on connect, so offline lines show none</span>
+    </header>
+    {{if .Devices}}
+    <div style="overflow-x: auto;">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Line</th>
+            <th>Household</th>
+            <th>Status</th>
+            <th>Pi</th>
+            <th>Firmware</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Devices}}
+          <tr>
+            <td style="white-space: nowrap;"><span class="num" style="color: var(--ink);">{{fmtPhone .Number}}</span>{{if .Name}} <span class="muted">{{.Name}}</span>{{end}}</td>
+            <td style="white-space: nowrap;">{{.Household}}</td>
+            <td>{{if .Online}}<span class="chip chip--on"><span class="chip__dot"></span>online</span>{{else}}<span class="chip"><span class="chip__dot"></span>offline</span>{{end}}</td>
+            <td class="num" style="white-space: nowrap;">{{if .PiVersion}}{{.PiVersion}}{{if .PiBehind}} <span class="chip chip--warn"><span class="chip__dot"></span>behind</span>{{end}}{{else}}<span class="muted">&ndash;</span>{{end}}</td>
+            <td class="num" style="white-space: nowrap;">{{if .FirmwareVersion}}{{.FirmwareVersion}}{{if .FirmwareBehind}} <span class="chip chip--warn"><span class="chip__dot"></span>behind</span>{{end}}{{else}}<span class="muted">&ndash;</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="empty"><div>No lines yet.</div></div>
+    {{end}}
+  </section>
+
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Accounts</h2>
+      <span class="panel__title-sub">Newest first</span>
+    </header>
+    {{if .Accounts}}
+    <div style="overflow-x: auto;">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Households</th>
+            <th>Status</th>
+            <th class="r">Created</th>
+            <th class="r">Last login</th>
+            <th class="r"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Accounts}}
+          <tr>
+            <td style="color: var(--ink); white-space: nowrap;">{{.Email}}</td>
+            <td style="white-space: nowrap;">{{if .Name}}{{.Name}}{{else}}<span class="muted">&ndash;</span>{{end}}</td>
+            <td class="muted" style="font-size: 12.5px; white-space: nowrap;">{{if .Households}}{{range $i, $h := .Households}}{{if $i}}, {{end}}{{$h}}{{end}}{{else}}<span class="chip chip--warn"><span class="chip__dot"></span>none</span>{{end}}</td>
+            <td>{{if .DisabledAt}}<span class="chip chip--err"><span class="chip__dot"></span>disabled</span>{{else}}<span class="chip chip--on"><span class="chip__dot"></span>active</span>{{end}}</td>
+            <td class="num r muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+            <td class="num r muted">{{if .LastLoginAt}}{{.LastLoginAt.Format "Jan 2 15:04"}}{{else}}never{{end}}</td>
+            <td class="r" style="white-space: nowrap;">
+              {{if and $.User (eq .ID $.User.ID)}}
+              <span class="muted" style="font-size: 12px;">you</span>
+              {{else if .DisabledAt}}
+              <form method="POST" action="/admin/accounts/{{.ID}}/enable" style="display: inline;">
+                <button type="submit" class="btn btn--sm btn--quiet">Enable</button>
+              </form>
+              {{else}}
+              <button type="button" class="btn btn--sm btn--danger"
+                      data-confirm
+                      data-confirm-action="/admin/accounts/{{.ID}}/disable"
+                      data-confirm-title="Disable {{.Email}}?"
+                      data-confirm-body="They are signed out everywhere immediately and cannot sign in again until you enable the account. Their phones keep working."
+                      data-confirm-submit="Disable account">Disable</button>
+              {{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="empty"><div>No accounts yet.</div></div>
+    {{end}}
+  </section>
+
+  <section class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">Calls per day</h2>
+      <span class="panel__title-sub">All households, {{.Timezone}}</span>
+    </header>
+    <table class="t">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th class="r">Calls</th>
+          <th class="r">Answered</th>
+          <th class="r">Talk time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Days}}
+        <tr>
+          <td class="num" style="white-space: nowrap;">{{.Day.Format "Mon Jan 2"}}</td>
+          <td class="num r"{{if eq .Calls 0}} style="color: var(--ink-muted);"{{end}}>{{.Calls}}</td>
+          <td class="num r"{{if eq .Answered 0}} style="color: var(--ink-muted);"{{end}}>{{.Answered}}</td>
+          <td class="num r"{{if eq .DurationS 0}} style="color: var(--ink-muted);"{{end}}>{{if gt .DurationS 0}}{{fmtDuration .DurationS}}{{else}}&ndash;{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+
+  {{template "page-footer" .}}
+
+</div>
+{{end}}

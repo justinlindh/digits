@@ -48,6 +48,9 @@
     <a href="/calls"    class="{{if eq .Page "calls"}}is-active{{end}}">Calls</a>
     {{end}}
     <a href="/settings" class="{{if eq .Page "settings"}}is-active{{end}}">Settings</a>
+    {{if .IsAdmin}}
+    <a href="/admin"    class="{{if eq .Page "admin"}}is-active{{end}}">Admin</a>
+    {{end}}
   </nav>
 
   <div class="rail__session">

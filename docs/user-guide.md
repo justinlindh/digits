@@ -28,7 +28,7 @@ It's a real telephone. It makes real calls. That's it.
 **What you'll also need:**
 - A Wi-Fi network with internet access
 - A smartphone or laptop (for the one-time setup, and to pair the phone)
-- A Digits account -- sign in at `app.digits.family` to pair the phone and choose its number
+- A Digits account -- sign in at `app.digits.family` to pair the phone and choose its number. Sign in with Google, or with the link that arrives when a family member already on Digits invites you. The email sign-in form only sends links to addresses that already have an account or an invite.
 
 ---
 
@@ -237,6 +237,9 @@ When the handset is resting on the cradle, the microphone is **physically discon
 
 **No screen, no apps, no tracking**  
 There's nothing to tap, no account to log into, no data to harvest. The phone doesn't know your location, your contacts, or your habits. It makes calls. That's all.
+
+**What the server operator can see**  
+Whoever runs your Digits server can see which accounts and phones exist, whether a phone is online and up to date, and can disable an account. They cannot hear calls, and they cannot see who called whom. If your household has call history turned off, the operator sees no call activity for your household at all.
 
 ---
 

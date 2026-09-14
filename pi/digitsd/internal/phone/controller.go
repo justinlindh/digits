@@ -19,6 +19,7 @@ const (
 	StateRINGING         State = "RINGING"
 	StateCONNECTED       State = "CONNECTED"
 	StateREMOTE_HANGUP   State = "REMOTE_HANGUP"   // Far end hung up; handset still off-hook
+	StateCALL_FAILED     State = "CALL_FAILED"     // Answered call never got media; handset still off-hook
 	StateOFFHOOK_TIMEOUT State = "OFFHOOK_TIMEOUT" // Off-hook with no dialing; CO permanent-signal treatment
 	StateADD_DIALTONE    State = "ADD_DIAL_TONE"   // Flash from CONNECTED: B on hold, dialing C
 	StateADD_DIALING     State = "ADD_DIALING"     // Collecting digits for C
@@ -43,6 +44,7 @@ const (
 	ToneHowler       = "HOWLER"
 	ToneIntercept    = "INTERCEPT"    // generic SIT + "please try again" (service unavailable)
 	ToneDisconnected = "DISCONNECTED" // SIT + "number you have dialed is not in service" (misdial)
+	ToneCallFailed   = "CALL_FAILED"   // spoken "call could not be connected" announcement
 	ToneStop         = "STOP"
 	ToneStopAll      = "STOPALL"
 )
@@ -67,6 +69,11 @@ const addDialDigitsRequired = 7
 // outbound call attempt and enters VOICEMAIL_PLAYBACK while voicemail is
 // enabled. Not user-configurable.
 const voicemailRetrievalCode = "*98"
+
+// oneShotMaxDuration caps how long a sequence waits on OncePlaying for a
+// spoken announcement before moving on; no shipped clip runs anywhere near
+// this long, so hitting it means the mixer is stuck.
+const oneShotMaxDuration = 15 * time.Second
 
 type controllerTiming struct {
 	AutoDialDelay          time.Duration // silence between last digit and first ringback
@@ -98,7 +105,7 @@ type Callbacks interface {
 	EnableFlashDetection()      // Enable Pico hook-flash detection on the connected call
 	InitiateCall(number string) error // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
-	HangupCall()                // Tear down WebRTC call
+	HangupCall(reason string)   // Tear down WebRTC call; reason (may be "") rides on the hangup signal
 	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered (Pico -> CONNECTED)
 	NotifyPicoReset()           // Reset the Pico FSM to IDLE, releasing a CALL:CONNECTED hold taken for a peerless local session
 	MutePeer(phone string)                                // Silence both directions of the A↔B audio path (silent hold)
@@ -393,7 +400,7 @@ func (c *Controller) HandleSignal(msgType, sender string) {
 	case "answer":
 		c.onSignalAnswer(sender)
 	case "hangup":
-		c.onSignalHangup(sender)
+		c.onSignalHangup(sender, "")
 	case "busy":
 		c.onSignalBusy(sender)
 	case "error":
@@ -401,6 +408,16 @@ func (c *Controller) HandleSignal(msgType, sender string) {
 	default:
 		slog.Warn("phone: unhandled signal", "type", msgType)
 	}
+}
+
+// HandleHangup processes a hangup from the signaling layer. reason is the
+// far end's hangup reason (see signal.HangupReason*), or "" for a plain
+// hangup; the local connect deadline reports through here too, with
+// signal.HangupReasonConnectTimeout, so both ends get the same treatment.
+func (c *Controller) HandleHangup(sender, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onSignalHangup(sender, reason)
 }
 
 // --- internal event handlers (called with lock held) ---
@@ -494,7 +511,7 @@ func (c *Controller) onHookOn() {
 	c.cb.StopRing()
 	c.cb.SendLED(LEDOff)
 	if wasConnectedOrCalling || inConferenceFlow {
-		c.cb.HangupCall()
+		c.cb.HangupCall("")
 	} else if wasCallReturn {
 		// Abandoning the *69 announcement (or *89 cancel announcement) by
 		// hanging up never triggers HangupCall, so the daemon's
@@ -513,7 +530,8 @@ func (c *Controller) onHookOn() {
 		// exits without re-arming dial tone on the now-idle phone.
 		c.cb.VoicemailExitGreetingPlayback()
 	}
-	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
+	// REMOTE_HANGUP / CALL_FAILED / OFFHOOK_TIMEOUT: nothing to tear down,
+	// tones/LED cleaned up above.
 }
 
 func (c *Controller) onKey(digit string) {
@@ -732,16 +750,8 @@ func (c *Controller) playRejectSequence() {
 
 	c.cb.SendTone(ToneStop)
 	c.cb.SendTone(ToneIntercept)
-	deadline := time.Now().Add(15 * time.Second)
-	for c.cb.OncePlaying() {
-		time.Sleep(c.timing.RejectPollInterval)
-		if !checkState() {
-			return
-		}
-		if time.Now().After(deadline) {
-			slog.Error("phone: intercept tone timeout, aborting rejection")
-			return
-		}
+	if !c.awaitOneShot(checkState, "intercept") {
+		return
 	}
 
 	time.Sleep(c.timing.PostInterceptDelay)
@@ -837,7 +847,7 @@ func (c *Controller) ringTimeoutWatcher(gen uint64, d time.Duration) {
 	if c.state != StateVOICEMAIL_GREETING || c.ringTimeoutGen != gen {
 		return
 	}
-	c.abortVoicemailLocked()
+	c.abortVoicemailLocked("")
 }
 
 // AbortVoicemailGreeting abandons an in-progress voicemail greeting via the
@@ -852,19 +862,19 @@ func (c *Controller) AbortVoicemailGreeting() bool {
 	if c.state != StateVOICEMAIL_GREETING {
 		return false
 	}
-	c.abortVoicemailLocked()
+	c.abortVoicemailLocked(signal.HangupReasonConnectTimeout)
 	return true
 }
 
 // abortVoicemailLocked reverts an in-progress voicemail state to IDLE and
-// tears the call down. The single canonical greeting-abort sequence, shared
-// by the auto-answer failure revert and the caller-hangup path. Caller must
-// hold c.mu.
-func (c *Controller) abortVoicemailLocked() {
+// tears the call down with the given hangup reason. The single canonical
+// greeting-abort sequence, shared by the auto-answer failure revert and the
+// caller-hangup path. Caller must hold c.mu.
+func (c *Controller) abortVoicemailLocked(reason string) {
 	c.state = StateIDLE
 	c.cb.SendTone(ToneStop)
 	c.cb.SendLED(LEDOff)
-	c.cb.HangupCall()
+	c.cb.HangupCall(reason)
 }
 
 func (c *Controller) onSignalAnswer(sender string) {
@@ -887,7 +897,7 @@ func (c *Controller) onSignalAnswer(sender string) {
 	}
 }
 
-func (c *Controller) onSignalHangup(sender string) {
+func (c *Controller) onSignalHangup(sender, reason string) {
 	switch c.state {
 	case StateCALLING:
 		// Far end went away while we were ringing out (e.g. the server's
@@ -908,10 +918,23 @@ func (c *Controller) onSignalHangup(sender string) {
 		c.cb.SendLED(LEDOff)
 	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		slog.Info("phone: caller hung up during voicemail")
-		c.abortVoicemailLocked()
+		c.abortVoicemailLocked(reason)
 	case StateCONNECTED:
+		if reason == signal.HangupReasonConnectTimeout {
+			// The answered call never got media (our own deadline or the far
+			// end's). Our hangup carries the reason so the server records it
+			// and the peer, if it has not already given up, plays the same
+			// announcement before the off-hook sequence.
+			slog.Warn("phone: answered call never connected", "peer", sender)
+			c.state = StateCALL_FAILED
+			c.cb.HangupCall(reason)
+			c.cb.SendTone(ToneStopAll)
+			c.cb.SendTone(ToneCallFailed)
+			c.runPermanentSignalTreatment(StateCALL_FAILED, "connect timeout")
+			return
+		}
 		c.state = StateREMOTE_HANGUP
-		c.cb.HangupCall()
+		c.cb.HangupCall("")
 		c.cb.SendTone(ToneStopAll)
 		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "remote hangup")
 	case StateADD_CALLING, StateADD_PRIVATE:
@@ -943,8 +966,27 @@ func (c *Controller) onTimeoutDialTone() {
 	c.runPermanentSignalTreatment(StateOFFHOOK_TIMEOUT, "dial-tone timeout")
 }
 
+// awaitOneShot blocks until the mixer's current one-shot clip finishes.
+// Returns false if the controller closed or keepGoing reports the caller
+// lost its state. A clip that overruns oneShotMaxDuration is logged and
+// treated as finished.
+func (c *Controller) awaitOneShot(keepGoing func() bool, what string) bool {
+	deadline := time.Now().Add(oneShotMaxDuration)
+	for c.cb.OncePlaying() {
+		if !c.sleepOrDone(c.timing.RejectPollInterval) || !keepGoing() {
+			return false
+		}
+		if time.Now().After(deadline) {
+			slog.Error("phone: one-shot clip overran, moving on", "what", what)
+			return true
+		}
+	}
+	return true
+}
+
 // runPermanentSignalTreatment plays the 90s POTS off-hook sequence
 // (Bellcore GR-506-CORE permanent signal treatment) in a goroutine:
+//   0. Any one-shot clip the caller queued (a spoken announcement) plays out
 //   1. Brief silence (~1s CO processing delay)
 //   2. Reorder tone (fast busy, 480+620 Hz) for ~45s
 //   3. Howler/ROH tone (loud multi-freq) for ~3 min
@@ -964,6 +1006,9 @@ func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason st
 			return c.state == treatmentState && c.treatmentGen == gen
 		}
 
+		if !c.awaitOneShot(stillInTreatment, reason) {
+			return
+		}
 		if !c.sleepOrDone(c.timing.TreatmentInitialDelay) || !stillInTreatment() {
 			return
 		}
@@ -1184,7 +1229,7 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 	}
 	slog.Info("conference: end received", "conf_id", confID, "reason", reason, "state", c.state, "is_host", c.isConfHost)
 	c.cb.TearDownAllMeshPeers()
-	c.cb.HangupCall()
+	c.cb.HangupCall("")
 
 	c.confID = ""
 	c.isConfHost = false

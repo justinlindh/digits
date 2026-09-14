@@ -173,6 +173,11 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Create session
 	sessionToken, _, err := g.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
+		if errors.Is(err, ErrAccountDisabled) {
+			g.observeLogin("failure")
+			http.Redirect(w, r, "/auth/login?error=account+disabled", http.StatusSeeOther)
+			return
+		}
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}

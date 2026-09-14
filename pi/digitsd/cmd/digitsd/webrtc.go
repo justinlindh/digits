@@ -159,6 +159,7 @@ func (d *daemonCallbacks) AnswerCall() {
 		d.pendingCaller = ""
 
 		d.sendPreparedAnswer(pa)
+		d.armConnectTimerLocked(caller)
 
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
@@ -234,6 +235,7 @@ func (d *daemonCallbacks) AnswerCall() {
 		SDP:  answerSDP,
 	})
 	close(sdpSent)
+	d.armConnectTimerLocked(caller)
 
 	if d.pipeline == nil {
 		d.pipeline = d.newPipeline()
@@ -247,7 +249,46 @@ func (d *daemonCallbacks) AnswerCall() {
 	slog.Info("answered call", "caller", caller)
 }
 
-func (d *daemonCallbacks) HangupCall() {
+// armConnectTimerLocked starts the post-answer connect deadline for the
+// current 2-party peer. The Connected callback (actionClearRecovery) and
+// HangupCall cancel it; if it fires, the controller gets a hangup carrying
+// connect_timeout so both ends run the failure treatment. Caller must hold
+// d.mu.
+func (d *daemonCallbacks) armConnectTimerLocked(peer string) {
+	pm := d.peerMgr
+	if pm == nil {
+		return
+	}
+	d.cancelConnectTimerLocked()
+	d.connectTimer = time.AfterFunc(connectTimeout, func() { d.connectDeadline(pm, peer) })
+}
+
+// connectDeadline is the connectTimer body: pm is the peer the deadline was
+// armed for, so a hangup or fresh call that replaced d.peerMgr makes it a
+// no-op.
+func (d *daemonCallbacks) connectDeadline(pm *owebrtc.PeerManager, peer string) {
+	defer recoverGoroutine("connect-deadline")
+	d.mu.Lock()
+	d.connectTimer = nil
+	live := d.peerMgr == pm
+	d.mu.Unlock()
+	if !live || pm.ConnectionState() == webrtc.PeerConnectionStateConnected {
+		return
+	}
+	slog.Error("webrtc: answered call never connected", "peer", peer, "state", pm.ConnectionState().String(), "timeout", connectTimeout)
+	d.ctrlSignal.HandleHangup(peer, sigclient.HangupReasonConnectTimeout)
+}
+
+// cancelConnectTimerLocked stops the post-answer connect deadline.
+// Must be called with d.mu held.
+func (d *daemonCallbacks) cancelConnectTimerLocked() {
+	if d.connectTimer != nil {
+		d.connectTimer.Stop()
+		d.connectTimer = nil
+	}
+}
+
+func (d *daemonCallbacks) HangupCall(reason string) {
 	t0 := time.Now()
 	d.mu.Lock()
 
@@ -311,8 +352,9 @@ func (d *daemonCallbacks) HangupCall() {
 	d.isRestartingICE = false
 	d.cancelRestartTimerLocked()
 	d.cancelDisconnectDebounceLocked()
+	d.cancelConnectTimerLocked()
 
-	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
+	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer, Reason: reason})
 
 	// Snapshot the slow-to-close resources and null them out so a fresh
 	// call setup (next pickup) doesn't have to wait for pion's DTLS / ICE
@@ -704,7 +746,7 @@ func (d *daemonCallbacks) triggerHangup() {
 	if d.ctrl == nil {
 		return
 	}
-	go d.ctrl.HandleSignal("hangup", "")
+	go d.ctrl.HandleHangup("", "")
 }
 
 // connAction is the decision output for a pion connection-state change.
@@ -889,6 +931,7 @@ func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, s
 		d.isRestartingICE = false
 		d.cancelDisconnectDebounceLocked()
 		d.cancelRestartTimerLocked()
+		d.cancelConnectTimerLocked()
 		// Spawn the link-health reporter once per call (not on recovery).
 		if !d.linkHealthDisabled && d.reporterCancel == nil && d.peerMgr != nil {
 			rctx, cancel := context.WithCancel(context.Background())

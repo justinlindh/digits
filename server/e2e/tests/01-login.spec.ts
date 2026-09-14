@@ -20,8 +20,8 @@ test.describe('Login page', () => {
     // Page title
     await expect(page).toHaveTitle(/Sign In|Digits/i);
 
-    // DIGITS branding
-    await expect(page.locator('text=DIGITS')).toBeVisible();
+    // DIGITS branding (the heading specifically; body copy also says "Digits")
+    await expect(page.getByRole('heading', { name: 'Digits' })).toBeVisible();
 
     // Email input
     const emailInput = page.locator('input[type="email"][name="email"]');

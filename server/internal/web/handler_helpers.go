@@ -446,7 +446,10 @@ type chromeData struct {
 	Household  *household.Household
 	Households []*household.Household
 	HasUpdates bool
-	allSilent  bool
+	// IsAdmin renders the /admin nav link. It is derived from the configured
+	// allowlist and the session user only, never from request input.
+	IsAdmin   bool
+	allSilent bool
 }
 
 func (c chromeData) HouseholdName() string {
@@ -485,8 +488,10 @@ func newChromeData(page string, user *auth.User, hh *household.Household) chrome
 
 func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chromeData {
 	active, households := h.resolveActiveHousehold(r)
-	cd := newChromeData(page, auth.UserFromContext(r.Context()), active)
+	user := auth.UserFromContext(r.Context())
+	cd := newChromeData(page, user, active)
 	cd.Households = households
+	cd.IsAdmin = user != nil && isAdminEmail(h.cfg.AdminEmails, user.Email)
 	if active != nil {
 		cd.HasUpdates = h.hasPhoneUpdates(r.Context(), active.ID)
 		if h.lineStore != nil {

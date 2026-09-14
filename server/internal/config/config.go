@@ -29,6 +29,9 @@ type Config struct {
 	SMTPFrom string
 	// Admin
 	AdminSecret string
+	// AdminEmails lists the account emails (lowercased) allowed to view the
+	// /admin page. Empty disables the page entirely.
+	AdminEmails []string
 	// Dev
 	DevMode bool
 	// Link health flusher: when true, calls.NewHealthStore starts with the
@@ -91,6 +94,7 @@ func Load() *Config {
 	stringEnv("SMTP_FROM", &c.SMTPFrom)
 	// Admin
 	stringEnv("ADMIN_SECRET", &c.AdminSecret)
+	listEnv("ADMIN_EMAILS", &c.AdminEmails)
 	// Dev
 	boolEnv("DEV_MODE", &c.DevMode)
 	oneEnv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED", &c.LinkHealthFlushDisabled)

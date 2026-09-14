@@ -520,4 +520,7 @@ var migrations = []migration{
 	{31, `
 		CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller, started_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee, started_at DESC)`},
+	// operator-disabled accounts: a non-null disabled_at blocks sign-in and
+	// session validation until an admin clears it
+	{32, `ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ`},
 }
