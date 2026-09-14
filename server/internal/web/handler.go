@@ -519,7 +519,12 @@ func (h *Handler) Router() http.Handler {
 	// Public routes: no auth required
 	mux.HandleFunc("GET /auth/login", h.authHandlers.HandleLoginPage)
 	mux.Handle("POST /auth/magic", h.authLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkRequest)))
-	mux.Handle("GET /auth/magic/{token}", h.magicVerifyLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
+	// The emailed link is a GET that only renders a button; the POST behind
+	// that button is what consumes the token. Mail security scanners fetch
+	// every link they see, so a GET that consumed the token would sign in,
+	// and create an account for, whoever's inbox the link landed in.
+	mux.Handle("GET /auth/magic/{token}", h.magicVerifyLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkConfirm)))
+	mux.Handle("POST /auth/magic/{token}", h.magicVerifyLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
 	mux.HandleFunc("POST /auth/logout", h.authHandlers.HandleLogout)
 	mux.HandleFunc("GET /auth/dev-session", h.authHandlers.HandleDevSession)
 	mux.Handle("GET /auth/google/login", h.googleLoginLimiter.Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))

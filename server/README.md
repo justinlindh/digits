@@ -236,7 +236,8 @@ See `.env.example` for a starter config file.
 |---------------------------|---------------------------|
 | `/auth/login`             | Login page                |
 | `POST /auth/magic`        | Request magic link email. Sent only to addresses with an account or a pending household invite; every other submission gets the same "check your email" reply and no mail. Honeypot field `website`; at most 3 links per address per hour |
-| `/auth/magic/{token}`     | Verify magic link         |
+| `GET /auth/magic/{token}` | Emailed link landing: renders a sign-in button, consumes nothing (mail security scanners fetch links) |
+| `POST /auth/magic/{token}` | Verify magic link and sign in |
 | `/auth/google/login`      | Google OAuth login        |
 | `/auth/google/callback`   | Google OAuth callback     |
 | `POST /auth/logout`       | Log out                   |
