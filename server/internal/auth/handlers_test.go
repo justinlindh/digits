@@ -93,7 +93,10 @@ func TestHandleMagicLinkRequest_EmptyEmail(t *testing.T) {
 }
 
 func TestHandleMagicLinkRequest_Success(t *testing.T) {
-	h, _, sender := newTestHandlers(t)
+	h, s, sender := newTestHandlers(t)
+	if _, err := s.CreateUser(context.Background(), "user@example.com", "", nil); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
 
 	form := url.Values{"email": {"user@example.com"}}
 	req := httptest.NewRequest(http.MethodPost, "/auth/magic", strings.NewReader(form.Encode()))
@@ -401,7 +404,10 @@ func newTestHandlersWithMetrics(t *testing.T) (*Handlers, *Store, *fakeMetrics) 
 }
 
 func TestMagicLinkRequestEmitsIssuedMetric(t *testing.T) {
-	h, _, m := newTestHandlersWithMetrics(t)
+	h, s, m := newTestHandlersWithMetrics(t)
+	if _, err := s.CreateUser(context.Background(), "metrics@example.com", "", nil); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
 
 	form := url.Values{"email": {"metrics@example.com"}}
 	req := httptest.NewRequest(http.MethodPost, "/auth/magic", strings.NewReader(form.Encode()))

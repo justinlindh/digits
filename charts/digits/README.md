@@ -30,7 +30,7 @@ signald:
     COOKIE_DOMAIN: ".example.com"
     GOOGLE_REDIRECT_URL: "https://app.example.com/auth/google/callback"
     SMTP_FROM: "noreply@example.com"
-    ADMIN_EMAILS: "you@example.com"  # optional: who may open the unlinked /admin page
+    ADMIN_EMAILS: "you@example.com"  # who may open /admin; also the only addresses that can request a magic link before any account exists
   envFrom:
     - secretRef:
         name: digits-secrets  # must contain ADMIN_SECRET, SMTP_*, GOOGLE_*, SIGNALD_TURN_*

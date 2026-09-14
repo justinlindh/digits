@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -21,6 +22,17 @@ type Metrics interface {
 	ObserveMagicLink(event string)
 }
 
+// InviteChecker reports whether an address holds a pending household invite.
+// It is the second of the two things that entitle an address to a magic link
+// (the first being an existing account).
+type InviteChecker interface {
+	HasPendingInvite(ctx context.Context, addr string) (bool, error)
+}
+
+// honeypotField is the name of the hidden login-form input that people never
+// see and form bots fill in. Any submission carrying a value is dropped.
+const honeypotField = "website"
+
 // Handlers provides HTTP handlers for login, magic link, and logout flows.
 type Handlers struct {
 	store        *Store
@@ -30,7 +42,23 @@ type Handlers struct {
 	cookieDomain string // optional, e.g. ".digits.family" for subdomain sharing
 	loginTmpl    *template.Template
 	devMode      bool
-	metrics      Metrics // may be nil
+	metrics      Metrics       // may be nil
+	invites      InviteChecker // may be nil: then only existing accounts get links
+	// alwaysAllowed are lowercased addresses that may request a link with no
+	// account or invite. Deployment config supplies them (the admin
+	// allowlist), which is how a fresh install creates its first account.
+	alwaysAllowed []string
+}
+
+// SetInviteChecker wires the pending-invite lookup used to decide whether an
+// address without an account may receive a magic link.
+func (h *Handlers) SetInviteChecker(c InviteChecker) {
+	h.invites = c
+}
+
+// SetAlwaysAllowed sets the addresses that may always request a magic link.
+func (h *Handlers) SetAlwaysAllowed(addrs []string) {
+	h.alwaysAllowed = addrs
 }
 
 // NewHandlers creates auth HTTP handlers.
@@ -47,6 +75,37 @@ func NewHandlers(store *Store, google *GoogleAuth, emailer email.Sender, baseURL
 		devMode:      devMode,
 		metrics:      m,
 	}
+}
+
+// mayReceiveMagicLink reports whether addr is entitled to a sign-in link: it
+// is on the deployment's always-allowed list, has an account, or holds a
+// pending household invite. Anything else is a stranger, and mailing
+// strangers on a form submitter's behalf is what this refuses.
+func (h *Handlers) mayReceiveMagicLink(ctx context.Context, addr string) (bool, error) {
+	for _, a := range h.alwaysAllowed {
+		if strings.EqualFold(a, addr) {
+			return true, nil
+		}
+	}
+	_, err := h.store.GetUserByEmail(ctx, addr)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, ErrUserNotFound) {
+		return false, err
+	}
+	if h.invites == nil {
+		return false, nil
+	}
+	return h.invites.HasPendingInvite(ctx, addr)
+}
+
+// suppressMagicLink is the response for a request the form accepts but will
+// not mail: indistinguishable from a real send to the caller, counted as
+// suppressed in metrics.
+func (h *Handlers) suppressMagicLink(w http.ResponseWriter, r *http.Request) {
+	h.observeMagicLink("suppressed")
+	http.Redirect(w, r, "/auth/login?success=check+your+email", http.StatusSeeOther)
 }
 
 // observeLogin and observeMagicLink guard the nil-metrics case so call sites
@@ -84,14 +143,35 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/auth/login?error=bad+request", http.StatusSeeOther)
 		return
 	}
-	emailAddr := r.FormValue("email")
+	emailAddr := email.Normalize(r.FormValue("email"))
 	if emailAddr == "" {
 		http.Redirect(w, r, "/auth/login?error=email+required", http.StatusSeeOther)
 		return
 	}
 	returnTo := r.FormValue("return_to")
 
+	// Every path that declines to send lands on the same redirect as a real
+	// send, so the form never reveals whether an address is known.
+	if r.FormValue(honeypotField) != "" {
+		h.suppressMagicLink(w, r)
+		return
+	}
+	known, err := h.mayReceiveMagicLink(r.Context(), emailAddr)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "magic link eligibility check failed", "err", err)
+		http.Redirect(w, r, "/auth/login?error=try+again", http.StatusSeeOther)
+		return
+	}
+	if !known {
+		h.suppressMagicLink(w, r)
+		return
+	}
+
 	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, MagicLinkTTL, returnTo)
+	if errors.Is(err, ErrMagicLinkRateLimited) {
+		h.suppressMagicLink(w, r)
+		return
+	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "magic link creation failed", "err", err)
 		http.Redirect(w, r, "/auth/login?error=try+again", http.StatusSeeOther)
