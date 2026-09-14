@@ -16,6 +16,7 @@ type mockTracker struct {
 	initiated         []string
 	answered          []string
 	ended             []string
+	endReasons        []string
 	mu                sync.Mutex
 	cleared           []string
 	calls             map[string]bool  // "a→b" keys for active calls
@@ -54,8 +55,9 @@ func (m *mockTracker) OnCallAnswered(ctx context.Context, caller, callee string)
 	m.answered = append(m.answered, caller+"→"+callee)
 	return nil
 }
-func (m *mockTracker) OnCallEnded(ctx context.Context, caller, callee string) error {
+func (m *mockTracker) OnCallEndedWithReason(ctx context.Context, caller, callee, reason string) error {
 	m.ended = append(m.ended, caller+"→"+callee)
+	m.endReasons = append(m.endReasons, reason)
 	delete(m.calls, caller+"→"+callee)
 	delete(m.calls, callee+"→"+caller)
 	delete(m.callIDs, caller+"→"+callee)
@@ -1715,4 +1717,51 @@ func TestRelayObservesICEServersIssued(t *testing.T) {
 	}
 	// Drain the ice-servers response.
 	<-conn1.Send
+}
+
+// TestHangupReasonForwardedAndRecorded: a phone-supplied hangup reason is
+// passed to the tracker and carried on the Hangup forwarded to the peer.
+func TestHangupReasonForwardedAndRecorded(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	d1 := &Conn{Send: make(chan []byte, 20)}
+	d2 := &Conn{Send: make(chan []byte, 20)}
+	_ = hub.Register("5550001", d1)
+	_ = hub.Register("5550002", d2)
+
+	relay.HandleMessage(context.Background(), "5550001", &Message{Type: TypeCall, To: "5550002"})
+	<-d2.Send // ring
+
+	relay.HandleMessage(context.Background(), "5550002", &Message{Type: TypeHangup, Reason: "connect_timeout"})
+
+	m := drainOne(t, d1.Send)
+	if m.Type != TypeHangup || m.Reason != "connect_timeout" {
+		t.Fatalf("expected hangup with reason connect_timeout, got %+v", m)
+	}
+	if len(tracker.endReasons) != 1 || tracker.endReasons[0] != "connect_timeout" {
+		t.Fatalf("tracker end reasons = %v, want [connect_timeout]", tracker.endReasons)
+	}
+}
+
+func TestHangupReason_ValidatesToken(t *testing.T) {
+	cases := map[string]string{
+		"":                                      "",
+		"connect_timeout":                       "connect_timeout",
+		"peer_offline":                          "peer_offline",
+		"Connect Timeout":                       "",
+		"drop table":                            "",
+		"x'; --":                                "",
+		"peer_offline_2":                        "",
+		"_leading":                              "_leading",
+		"trailing_":                             "trailing_",
+		strings.Repeat("a", hangupReasonMaxLen): strings.Repeat("a", hangupReasonMaxLen),
+		strings.Repeat("a", hangupReasonMaxLen+1): "",
+	}
+	for in, want := range cases {
+		if got := hangupReason(in); got != want {
+			t.Errorf("hangupReason(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

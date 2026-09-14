@@ -30,6 +30,13 @@ const (
 	// (iceRestartTimeout) must exceed this so a waiting peer does not give up
 	// before a dropped phone can return.
 	graceWindow = 20 * time.Second
+
+	// hangupReasonPeerOffline is recorded when the grace window expires
+	// without the dropped phone returning.
+	hangupReasonPeerOffline = "peer_offline"
+
+	// hangupReasonMaxLen bounds a client-supplied hangup reason token.
+	hangupReasonMaxLen = 32
 )
 
 // CallTracker is the subset of *calls.Tracker that the Relay needs to track
@@ -37,7 +44,7 @@ const (
 type CallTracker interface {
 	OnCallInitiated(ctx context.Context, from, to string) (int64, error)
 	OnCallAnswered(ctx context.Context, caller, callee string) error
-	OnCallEnded(ctx context.Context, caller, callee string) error
+	OnCallEndedWithReason(ctx context.Context, caller, callee, reason string) error
 	ClearByNumber(ctx context.Context, number string)
 	InCall(ctx context.Context, a, b string) bool
 	Busy(ctx context.Context, number string) bool
@@ -499,15 +506,34 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 	// Resolve the set of peers to notify. In pre-merge ADD_* flows the host
 	// may have multiple active 2-party calls (A-B held and A-C active); a
 	// single hook-on ends both. For the normal 2-party case this is one peer.
-	r.endActiveCallsAsHangup(ctx, from)
+	r.endActiveCallsAsHangup(ctx, from, hangupReason(msg.Reason))
+}
+
+// hangupReason returns a client-supplied hangup reason if it is a short
+// snake_case token, else "". Phones send one when they end a call for a
+// cause the server cannot see (an answered call whose media never connected);
+// it is persisted and forwarded to the peer, so anything else is dropped
+// rather than stored.
+func hangupReason(reason string) string {
+	if reason == "" || len(reason) > hangupReasonMaxLen {
+		return ""
+	}
+	for _, c := range reason {
+		if (c < 'a' || c > 'z') && c != '_' {
+			return ""
+		}
+	}
+	return reason
 }
 
 // endActiveCallsAsHangup ends every active 2-party call involving number the
 // same way an explicit hangup does: it records each call end (DB persistence
 // plus the OnCallEndedNotify observer that drives *69 retries) and forwards a
 // Hangup to each peer, then clears extension state. Shared by the hangup
-// handler and the grace-window expiry path so the two cannot drift.
-func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
+// handler and the grace-window expiry path so the two cannot drift. A
+// non-empty reason is recorded on the call and carried on the forwarded
+// Hangup so the peer can pick its treatment.
+func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number, reason string) {
 	if r.Tracker == nil {
 		return
 	}
@@ -518,16 +544,19 @@ func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
 	}
 	for _, peer := range peers {
 		callID := r.Tracker.CallIDForPair(ctx, number, peer)
-		if err := r.Tracker.OnCallEnded(ctx, number, peer); err != nil {
+		if err := r.Tracker.OnCallEndedWithReason(ctx, number, peer, reason); err != nil {
 			slog.ErrorContext(ctx, "failed to track call end", "err", err)
 		}
 		if callID != 0 {
 			attrs := []any{"call_id", callID, "from", number, "to", peer}
+			if reason != "" {
+				attrs = append(attrs, "reason", reason)
+			}
 			attrs = append(attrs, r.lineAttrs(ctx, number)...)
 			slog.InfoContext(ctx, "call ended", attrs...)
 			setSpanCallID(ctx, callID)
 		}
-		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: number, To: peer})
+		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: number, To: peer, Reason: reason})
 	}
 	r.clearExtensionsForCall(ctx, number)
 }
@@ -1010,7 +1039,7 @@ func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
 			return
 		}
 		slog.InfoContext(ctx, "grace: window expired, tearing down call", "number", number, "peer", peer)
-		r.endActiveCallsAsHangup(ctx, number)
+		r.endActiveCallsAsHangup(ctx, number, hangupReasonPeerOffline)
 	})
 	r.graceTimers[key] = entry
 	r.graceMu.Unlock()

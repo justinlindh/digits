@@ -102,3 +102,51 @@ func TestActiveCalls(t *testing.T) {
 		t.Fatalf("expected 0 active calls, got %d", len(active))
 	}
 }
+
+func TestOnCallEndedWithReason_PersistsReason(t *testing.T) {
+	d := setupTestDB(t)
+	tr := New(d.DB)
+
+	id, err := tr.OnCallInitiated(context.Background(), "3140011", "3140012")
+	if err != nil {
+		t.Fatalf("OnCallInitiated: %v", err)
+	}
+	if err := tr.OnCallAnswered(context.Background(), "3140011", "3140012"); err != nil {
+		t.Fatalf("OnCallAnswered: %v", err)
+	}
+	if err := tr.OnCallEndedWithReason(context.Background(), "3140012", "3140011", "connect_timeout"); err != nil {
+		t.Fatalf("OnCallEndedWithReason: %v", err)
+	}
+
+	c, err := tr.GetCall(context.Background(), id)
+	if err != nil {
+		t.Fatalf("GetCall: %v", err)
+	}
+	if c.Status != CallStatusEnded {
+		t.Fatalf("expected status ended, got %s", c.Status)
+	}
+	if c.EndReason == nil || *c.EndReason != "connect_timeout" {
+		t.Fatalf("expected end_reason connect_timeout, got %v", c.EndReason)
+	}
+}
+
+func TestOnCallEnded_LeavesEndReasonNull(t *testing.T) {
+	d := setupTestDB(t)
+	tr := New(d.DB)
+
+	id, err := tr.OnCallInitiated(context.Background(), "3140021", "3140022")
+	if err != nil {
+		t.Fatalf("OnCallInitiated: %v", err)
+	}
+	if err := tr.OnCallEnded(context.Background(), "3140021", "3140022"); err != nil {
+		t.Fatalf("OnCallEnded: %v", err)
+	}
+
+	c, err := tr.GetCall(context.Background(), id)
+	if err != nil {
+		t.Fatalf("GetCall: %v", err)
+	}
+	if c.EndReason != nil {
+		t.Fatalf("expected NULL end_reason, got %q", *c.EndReason)
+	}
+}
