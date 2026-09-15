@@ -23,9 +23,18 @@ func setupTestDB(t *testing.T) *db.Database {
 		t.Fatalf("setup db: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = d.DB.Exec("DELETE FROM conference_members")
-		_, _ = d.DB.Exec("DELETE FROM conferences")
-		_, _ = d.DB.Exec("DELETE FROM calls")
+		// calls.originating_conference_id and conferences.originating_call_id
+		// reference each other, so break the cycle before deleting either side.
+		for _, q := range []string{
+			"UPDATE calls SET originating_conference_id = NULL WHERE originating_conference_id IS NOT NULL",
+			"DELETE FROM conference_members",
+			"DELETE FROM conferences",
+			"DELETE FROM calls",
+		} {
+			if _, err := d.DB.Exec(q); err != nil {
+				t.Errorf("cleanup %q: %v", q, err)
+			}
+		}
 		_ = d.Close()
 	})
 	return d
