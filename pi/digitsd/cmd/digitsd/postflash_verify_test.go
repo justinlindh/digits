@@ -117,6 +117,18 @@ func TestFirmwareUpdateReportsSuccessOnlyAfterVerification(t *testing.T) {
 	}
 }
 
+func TestPublishLatestFirmwareVersionReplacesPendingResult(t *testing.T) {
+	results := make(chan firmwareVersionResult, 1)
+	results <- firmwareVersionResult{version: "1.8.0", commit: "old"}
+
+	publishLatestFirmwareVersion(results, firmwareVersionResult{version: "1.9.0", commit: "new"})
+
+	got := <-results
+	if got.version != "1.9.0" || got.commit != "new" {
+		t.Fatalf("published result = %q/%q, want 1.9.0/new", got.version, got.commit)
+	}
+}
+
 func TestAwaitPicoFirmwareDoesNotLeakOnRetryDelay(t *testing.T) {
 	fake := &fakePicoVerifier{pings: []error{nil}, versions: []struct {
 		version string

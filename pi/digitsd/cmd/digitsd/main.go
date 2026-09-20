@@ -969,6 +969,28 @@ type picoFirmwareVerifier interface {
 	QueryVersion() (string, string, error)
 }
 
+type firmwareVersionResult struct{ version, commit string }
+
+// publishLatestFirmwareVersion never makes a verified flash fail because the
+// main-loop handoff is temporarily full. A verified result supersedes any
+// pending best-effort requery result from the same reboot.
+func publishLatestFirmwareVersion(results chan firmwareVersionResult, result firmwareVersionResult) {
+	select {
+	case results <- result:
+		return
+	default:
+	}
+	select {
+	case <-results:
+	default:
+	}
+	select {
+	case results <- result:
+	default:
+		slog.Warn("pico: verified firmware result channel remained full, dropping")
+	}
+}
+
 // awaitPicoFirmware proves the flashed Pico is responding to fresh commands
 // and reports the exact target version. SerialPort.SendCommand installs its
 // response waiter before writing each command, so cached pre-flash lines cannot
@@ -1455,8 +1477,7 @@ func main() {
 	// fwVersionCh so the main loop updates capabilities and restores Pico state.
 	//
 	// requeryInFlight dedupes overlapping STATUS:READY calls.
-	type fwVersionResult struct{ version, commit string }
-	fwVersionCh := make(chan fwVersionResult, 1)
+	fwVersionCh := make(chan firmwareVersionResult, 1)
 	var requeryInFlight atomic.Bool
 	requeryFirmware := func() {
 		if !requeryInFlight.CompareAndSwap(false, true) {
@@ -1470,7 +1491,7 @@ func main() {
 				v, c, err := sp.QueryVersion()
 				if err == nil {
 					select {
-					case fwVersionCh <- fwVersionResult{version: v, commit: c}:
+					case fwVersionCh <- firmwareVersionResult{version: v, commit: c}:
 					default:
 						slog.Warn("pico: version result channel full, dropping")
 					}
@@ -1490,12 +1511,8 @@ func main() {
 		if err != nil {
 			return err
 		}
-		select {
-		case fwVersionCh <- fwVersionResult{version: version, commit: commit}:
-			return nil
-		case <-time.After(time.Second):
-			return errors.New("timed out publishing verified firmware version")
-		}
+		publishLatestFirmwareVersion(fwVersionCh, firmwareVersionResult{version: version, commit: commit})
+		return nil
 	}
 
 	// POST: verify Pico is alive
