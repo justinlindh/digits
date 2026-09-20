@@ -452,6 +452,6 @@ func (u *Updater) ApplyFirmwareUpdate(stagedELF string) error {
 		return fmt.Errorf("flash script: %w", err)
 	}
 
-	slog.Info("updater: firmware update applied successfully")
+	slog.Info("updater: firmware flash script completed")
 	return nil
 }
