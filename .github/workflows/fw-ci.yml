@@ -1,18 +1,21 @@
 name: Firmware CI
 
-# Host-side firmware unit tests. Path-filtered to firmware changes so nothing
-# runs unless the firmware moved. These tests are native (no Pico SDK, no ARM
-# toolchain), so the job stays cheap.
+# Host-side unit tests run for firmware changes. Pull requests also compile and
+# link the production Pico target with the repository's pinned Docker builder.
 
 on:
   push:
     branches: [main]
     paths:
       - 'firmware/**'
+      - 'Makefile'
+      - 'scripts/build.sh'
       - '.github/workflows/fw-ci.yml'
   pull_request:
     paths:
       - 'firmware/**'
+      - 'Makefile'
+      - 'scripts/build.sh'
       - '.github/workflows/fw-ci.yml'
 
 permissions:
@@ -26,8 +29,7 @@ jobs:
   host-tests:
     name: host-tests
     # Fork-head PRs run GitHub-hosted so fork code never reaches the
-    # self-hosted pool; same-repo PRs, pushes, and dispatches follow
-    # RUNNER_LABEL.
+    # self-hosted pool; same-repo PRs and pushes follow RUNNER_LABEL.
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
@@ -40,3 +42,19 @@ jobs:
       - name: Build and run host tests
         working-directory: firmware
         run: make test
+      - name: Validate firmware CI configuration
+        run: python3 firmware/test/test_ci_workflow.py
+
+  production-build:
+    name: production-build
+    if: github.event_name == 'pull_request'
+    # Keep untrusted fork code away from the self-hosted runner pool.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile and link production Pico firmware
+        run: |
+          make firmware
+          test -s firmware/build/docker/digits.elf
+          test -s firmware/build/docker/digits.uf2
