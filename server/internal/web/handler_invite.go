@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -95,7 +96,9 @@ func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request)
 
 	inv, err := h.householdStore.RedeemInvite(r.Context(), token, user.ID, user.Email)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "redeem invite failed", "err", err)
+		if !isExpectedInviteRedemptionError(err) {
+			slog.ErrorContext(r.Context(), "redeem invite failed", "err", err)
+		}
 		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
 	}
@@ -105,4 +108,8 @@ func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request)
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func isExpectedInviteRedemptionError(err error) bool {
+	return errors.Is(err, household.ErrInviteExpiredOrUsed) || errors.Is(err, household.ErrInviteEmailMismatch)
 }
