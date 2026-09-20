@@ -36,6 +36,17 @@ class FirmwareCIWorkflowTest(unittest.TestCase):
                 self.assertGreaterEqual(self.workflow.count(f"'{path}'"), 2)
 
     def test_builder_fails_closed_on_pinned_tool_versions(self) -> None:
+        self.assertIn(
+            "FROM debian:bookworm-slim@sha256:", self.dockerfile
+        )
+        self.assertIn("gcc-arm-none-eabi=15:12.2.rel1-1", self.dockerfile)
+        self.assertIn(
+            "libnewlib-arm-none-eabi=3.3.0-1.3+deb12u1", self.dockerfile
+        )
+        self.assertIn(
+            "libstdc++-arm-none-eabi-newlib=15:12.2.rel1-1+23",
+            self.dockerfile,
+        )
         self.assertIn("ARG PICO_SDK_VERSION=2.2.0", self.dockerfile)
         self.assertIn("ARG PICO_SDK_COMMIT=", self.dockerfile)
         self.assertIn("ARG ARM_GCC_VERSION=12.2.1", self.dockerfile)
