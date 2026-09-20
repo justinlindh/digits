@@ -24,6 +24,10 @@ var ErrInviteNotFound = errors.New("invite not found")
 // ErrInviteExpiredOrUsed is returned by AcceptInvite when the token doesn't match a live pending invite.
 var ErrInviteExpiredOrUsed = errors.New("invite not found, expired, or already used")
 
+// ErrInviteEmailMismatch is returned when an invite is redeemed by a user
+// whose email address does not match the invited address.
+var ErrInviteEmailMismatch = errors.New("invite email does not match user")
+
 var ErrInviteNotPending = errors.New("invite not found or not pending")
 
 // Invite represents an email invitation to join a household. The

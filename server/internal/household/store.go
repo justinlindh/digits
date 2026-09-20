@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
+	"github.com/justinlindh/digits/server/internal/email"
 )
 
 // ErrNotFound is returned by GetByID and Delete when no matching household exists.
@@ -212,6 +213,57 @@ func (s *Store) AddMember(ctx context.Context, userID, householdID, role string)
 	}
 	s.markHasHousehold(userID)
 	return nil
+}
+
+// RedeemInvite atomically validates and consumes an invite while adding the
+// invited user to its household as an admin.
+func (s *Store) RedeemInvite(ctx context.Context, token, userID, userEmail string) (*Invite, error) {
+	var accepted *Invite
+	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		inv, err := scanInvite(tx.QueryRowContext(ctx, `
+			SELECT `+inviteColumns+`
+			FROM household_invites
+			WHERE token = $1 AND status = 'pending' AND expires_at > NOW()
+			FOR UPDATE
+		`, token))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInviteExpiredOrUsed
+		}
+		if err != nil {
+			return fmt.Errorf("lock invite: %w", err)
+		}
+		if email.Normalize(userEmail) != inv.Email {
+			return ErrInviteEmailMismatch
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO household_members (user_id, household_id, role)
+			VALUES ($1, $2, 'admin')
+			ON CONFLICT (user_id, household_id) DO UPDATE SET role = EXCLUDED.role
+		`, userID, inv.HouseholdID); err != nil {
+			return fmt.Errorf("add invited member: %w", err)
+		}
+
+		accepted, err = scanInvite(tx.QueryRowContext(ctx, `
+			UPDATE household_invites
+			SET status = 'accepted', accepted_at = NOW()
+			WHERE id = $1 AND status = 'pending'
+			RETURNING `+inviteColumns,
+			inv.ID,
+		))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInviteExpiredOrUsed
+		}
+		if err != nil {
+			return fmt.Errorf("consume invite: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	s.markHasHousehold(userID)
+	return accepted, nil
 }
 
 // MemberWithUser includes user profile data alongside membership info.

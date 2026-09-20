@@ -93,25 +93,11 @@ func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	inv, err := h.inviteStore.GetByToken(r.Context(), token)
-	if err != nil || inv.Status != household.InviteStatusPending || inv.ExpiresAt.Before(time.Now()) {
+	inv, err := h.householdStore.RedeemInvite(r.Context(), token, user.ID, user.Email)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "redeem invite failed", "err", err)
 		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
-	}
-
-	if !strings.EqualFold(user.Email, inv.Email) {
-		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
-		return
-	}
-
-	if err := h.householdStore.AddMember(r.Context(), user.ID, inv.HouseholdID, "admin"); err != nil {
-		slog.ErrorContext(r.Context(), "add member failed", "err", err)
-		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
-		return
-	}
-
-	if _, err := h.inviteStore.AcceptInvite(r.Context(), token); err != nil {
-		slog.ErrorContext(r.Context(), "accept invite failed", "err", err)
 	}
 
 	if err := h.authStore.SetActiveHousehold(r.Context(), sessionToken, inv.HouseholdID); err != nil {
