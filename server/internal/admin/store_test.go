@@ -55,7 +55,8 @@ func mustScan(t *testing.T, database *db.Database, q string, args ...any) string
 // seedFixture builds two households. Alpha has two members, two lines with one
 // paired device and one unpaired device, and three calls inside the window
 // plus one before it. Beta has one member, one line, no devices, and one call
-// in the window whose callee is an alpha line (so it counts for both).
+// in the window whose callee is an alpha line (placed by beta, received by
+// alpha).
 func seedFixture(t *testing.T, database *db.Database, now time.Time) {
 	t.Helper()
 	alice := mustScan(t, database, `INSERT INTO users (email, name, created_at, last_login_at) VALUES ('alice@example.com', 'Alice', $1, $2) RETURNING id`, now.Add(-72*time.Hour), now.Add(-time.Hour))
@@ -157,16 +158,18 @@ func TestHouseholds(t *testing.T) {
 	if len(alpha.Lines) != 2 || alpha.Lines[0] != "1000001" || alpha.Lines[1] != "1000002" {
 		t.Errorf("alpha.Lines = %v", alpha.Lines)
 	}
-	if alpha.PairedDevices != 1 || alpha.Calls != 4 || !alpha.CallHistoryEnabled {
-		t.Errorf("alpha devices=%d calls=%d history=%v, want 1, 4, true", alpha.PairedDevices, alpha.Calls, alpha.CallHistoryEnabled)
+	// The three internal calls count as placed only; beta's call into alpha
+	// is the one received.
+	if alpha.PairedDevices != 1 || alpha.CallsPlaced != 3 || alpha.CallsReceived != 1 || !alpha.CallHistoryEnabled {
+		t.Errorf("alpha devices=%d placed=%d received=%d history=%v, want 1, 3, 1, true", alpha.PairedDevices, alpha.CallsPlaced, alpha.CallsReceived, alpha.CallHistoryEnabled)
 	}
 	if len(beta.Members) != 1 || len(beta.Lines) != 1 || beta.PairedDevices != 0 {
 		t.Errorf("beta = %+v", beta)
 	}
 	// Beta has one stored call in the window but opted out of call history,
 	// so the operator view reports none.
-	if beta.CallHistoryEnabled || beta.Calls != 0 {
-		t.Errorf("beta history=%v calls=%d, want false and 0", beta.CallHistoryEnabled, beta.Calls)
+	if beta.CallHistoryEnabled || beta.CallsPlaced != 0 || beta.CallsReceived != 0 {
+		t.Errorf("beta history=%v placed=%d received=%d, want false, 0, 0", beta.CallHistoryEnabled, beta.CallsPlaced, beta.CallsReceived)
 	}
 }
 
