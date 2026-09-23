@@ -92,11 +92,12 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 }
 
 // Household is one household with its membership, line numbers, paired
-// device count, and the calls in the window its lines placed (as caller) and
-// received (as callee). A call between two of the household's own lines
-// counts once in each. Both are always zero for a household that has call
-// history turned off: the operator view is a subset of what the household
-// chose to keep for itself, never more.
+// device count, and the calls in the window its lines placed and received.
+// Each call counts once: placed when a household line is the caller, else
+// received. That matches the direction the household's own dashboard shows,
+// so a call between two of its own lines is placed only. Both are always
+// zero for a household that has call history turned off: the operator view
+// is a subset of what the household chose to keep for itself, never more.
 type Household struct {
 	ID                 string
 	Name               string
@@ -110,7 +111,7 @@ type Household struct {
 }
 
 // Households lists every household, oldest first. since bounds the per
-// household call count.
+// household call counts.
 func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT h.id, h.name, h.created_at,
@@ -119,24 +120,23 @@ func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, e
 				FROM household_members m JOIN users u ON u.id = m.user_id
 				WHERE m.household_id = h.id
 			), '{}'),
-			COALESCE((
-				SELECT array_agg(l.number ORDER BY l.number)
-				FROM lines l WHERE l.household_id = h.id
-			), '{}'),
+			hl.nums,
 			(SELECT COUNT(*) FROM devices d JOIN lines l ON l.id = d.line_id
 				WHERE l.household_id = h.id AND d.paired_at IS NOT NULL),
 			h.call_history_enabled,
-			CASE WHEN h.call_history_enabled THEN
-				(SELECT COUNT(*) FROM calls c
-					WHERE c.started_at >= $1
-					AND c.caller IN (SELECT number FROM lines WHERE household_id = h.id))
-			ELSE 0 END,
-			CASE WHEN h.call_history_enabled THEN
-				(SELECT COUNT(*) FROM calls c
-					WHERE c.started_at >= $1
-					AND c.callee IN (SELECT number FROM lines WHERE household_id = h.id))
-			ELSE 0 END
+			cc.placed, cc.received
 		FROM households h
+		CROSS JOIN LATERAL (
+			SELECT COALESCE(array_agg(number ORDER BY number), '{}') AS nums
+			FROM lines WHERE household_id = h.id
+		) hl
+		CROSS JOIN LATERAL (
+			SELECT COUNT(*) FILTER (WHERE c.caller = ANY(hl.nums)) AS placed,
+				COUNT(*) FILTER (WHERE NOT c.caller = ANY(hl.nums)) AS received
+			FROM calls c
+			WHERE h.call_history_enabled AND c.started_at >= $1
+				AND (c.caller = ANY(hl.nums) OR c.callee = ANY(hl.nums))
+		) cc
 		ORDER BY h.created_at, h.name`,
 		since,
 	)

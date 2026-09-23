@@ -158,10 +158,10 @@ func TestHouseholds(t *testing.T) {
 	if len(alpha.Lines) != 2 || alpha.Lines[0] != "1000001" || alpha.Lines[1] != "1000002" {
 		t.Errorf("alpha.Lines = %v", alpha.Lines)
 	}
-	// Three internal calls count as both placed and received; beta's call
-	// into alpha adds one received.
-	if alpha.PairedDevices != 1 || alpha.CallsPlaced != 3 || alpha.CallsReceived != 4 || !alpha.CallHistoryEnabled {
-		t.Errorf("alpha devices=%d placed=%d received=%d history=%v, want 1, 3, 4, true", alpha.PairedDevices, alpha.CallsPlaced, alpha.CallsReceived, alpha.CallHistoryEnabled)
+	// The three internal calls count as placed only; beta's call into alpha
+	// is the one received.
+	if alpha.PairedDevices != 1 || alpha.CallsPlaced != 3 || alpha.CallsReceived != 1 || !alpha.CallHistoryEnabled {
+		t.Errorf("alpha devices=%d placed=%d received=%d history=%v, want 1, 3, 1, true", alpha.PairedDevices, alpha.CallsPlaced, alpha.CallsReceived, alpha.CallHistoryEnabled)
 	}
 	if len(beta.Members) != 1 || len(beta.Lines) != 1 || beta.PairedDevices != 0 {
 		t.Errorf("beta = %+v", beta)
