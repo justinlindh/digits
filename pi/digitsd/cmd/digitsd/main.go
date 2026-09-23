@@ -172,12 +172,12 @@ type daemonCallbacks struct {
 	// daemon (set-once) and are read by handleSignal; flashCapable and
 	// pairingRefresh are shared by identity with the run loop so a reset or
 	// load in either place is seen by the other.
-	deviceID        string          // hardware device ID, reported on factory reset
-	serverURL       string          // effective signaling server URL
-	flashCapable    *atomic.Bool    // SWD-flash capability (shared with run loop)
-	requeryFirmware func()          // re-query Pico firmware version off the main loop
-	pairingRefresh  *time.Timer     // pairing-code refresh timer (shared with run loop)
-	devMode         *devModeManager // dev-mode (SSH + dev web UI) lifecycle; nil outside normal mode
+	deviceID       string             // hardware device ID, reported on factory reset
+	serverURL      string             // effective signaling server URL
+	flashCapable   *atomic.Bool       // SWD-flash capability (shared with run loop)
+	verifyFirmware func(string) error // synchronously verify the flashed Pico version
+	pairingRefresh *time.Timer        // pairing-code refresh timer (shared with run loop)
+	devMode        *devModeManager    // dev-mode (SSH + dev web UI) lifecycle; nil outside normal mode
 
 	// Voicemail state. voicemailStore is opened once at startup and is nil
 	// when the feature is disabled or initialization failed. recorder is the
@@ -823,7 +823,7 @@ var errUpdateInProgress = errors.New("another update is already in progress")
 // delegates to runTargetedUpdate with empty targets (install whatever is
 // latest). When a call is in progress the update is deferred: pendingAutoUpdate
 // is set so HangupCall can retry once the call ends.
-func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, flashCapable bool, afterFirmwareUpdated func()) {
+func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, flashCapable bool, verifyFirmware func(string) error) {
 	d.mu.Lock()
 	inCall := d.callPeer != ""
 	d.mu.Unlock()
@@ -840,26 +840,19 @@ func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, f
 		targetPi, targetFW = p.pi, p.fw
 	}
 	err := retryWhileNotIndexed(indexRetryAttempts, indexRetryDelay, func() error {
-		return runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW, flashCapable, nil, afterFirmwareUpdated)
+		return runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW, flashCapable, nil, verifyFirmware)
 	})
 	if err == nil {
 		d.pushedRelease.Store(nil)
 	}
 }
 
-func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) error {
+func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, verifyFirmware func(string) error) error {
 	if !updateInProgress.CompareAndSwap(false, true) {
 		slog.Info("updater: skipping -- another update is already in progress")
 		return errUpdateInProgress
 	}
 	defer updateInProgress.Store(false)
-	// When a specific component is targeted, don't auto-upgrade the other.
-	// A targeted trigger with only target_pi set should not also install firmware.
-	targeted := targetPi != "" || targetFW != ""
-
-	if reportStatus == nil {
-		reportStatus = func(string, string) {} // no-op
-	}
 
 	baseURL := strings.TrimSuffix(serverURL, "/ws")
 	baseURL = strings.Replace(baseURL, "wss://", "https://", 1)
@@ -870,6 +863,22 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		CurrentPiVersion: piVersion,
 		CurrentFWVersion: fwVersion,
 	})
+	return runTargetedUpdateWithRunner(up, targetPi, targetFW, flashCapable, reportStatus, verifyFirmware)
+}
+
+type updateRunner interface {
+	CheckVersion(targetPi, targetFW string) (*updater.CheckResult, error)
+	Download(url, filename, expectedSHA256 string) (string, error)
+	ApplyFirmwareUpdate(stagedELF string) error
+	ApplyPiUpdate(stagedBinary, expectedVersion string) error
+}
+
+func runTargetedUpdateWithRunner(up updateRunner, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, verifyFirmware func(string) error) error {
+	// When a specific component is targeted, don't auto-upgrade the other.
+	targeted := targetPi != "" || targetFW != ""
+	if reportStatus == nil {
+		reportStatus = func(string, string) {}
+	}
 
 	slog.Info("updater: checking for updates", "target_pi", targetPi, "target_fw", targetFW)
 	result, err := up.CheckVersion(targetPi, targetFW)
@@ -915,8 +924,16 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 				reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
 				return err
 			}
-			if afterFirmwareUpdated != nil {
-				afterFirmwareUpdated()
+			if verifyFirmware == nil {
+				err := errors.New("firmware verification unavailable")
+				slog.Error("updater: firmware verification failed", "error", err)
+				reportStatus("failed", "Firmware verification failed: "+err.Error())
+				return err
+			}
+			if err := verifyFirmware(result.FWVersion); err != nil {
+				slog.Error("updater: firmware verification failed", "error", err)
+				reportStatus("failed", fmt.Sprintf("Firmware verification failed: %v", err))
+				return err
 			}
 		}
 	}
@@ -945,6 +962,67 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		}
 	}
 	return nil
+}
+
+type picoFirmwareVerifier interface {
+	Ping() error
+	QueryVersion() (string, string, error)
+}
+
+type firmwareVersionResult struct{ version, commit string }
+
+// publishLatestFirmwareVersion never makes a verified flash fail because the
+// main-loop handoff is temporarily full. A verified result supersedes any
+// pending best-effort requery result from the same reboot.
+func publishLatestFirmwareVersion(results chan firmwareVersionResult, result firmwareVersionResult) {
+	select {
+	case results <- result:
+		return
+	default:
+	}
+	select {
+	case <-results:
+	default:
+	}
+	select {
+	case results <- result:
+	default:
+		slog.Warn("pico: verified firmware result channel remained full, dropping")
+	}
+}
+
+// awaitPicoFirmware proves the flashed Pico is responding to fresh commands
+// and reports the exact target version. SerialPort.SendCommand installs its
+// response waiter before writing each command, so cached pre-flash lines cannot
+// satisfy either half of this handshake.
+func awaitPicoFirmware(pico picoFirmwareVerifier, expected string, attempts int, interval time.Duration) (string, string, error) {
+	if expected == "" {
+		return "", "", errors.New("expected firmware version is empty")
+	}
+	if attempts < 1 {
+		return "", "", errors.New("firmware verification attempts must be positive")
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if err := pico.Ping(); err != nil {
+			lastErr = fmt.Errorf("fresh PONG attempt %d/%d: %w", attempt, attempts, err)
+		} else {
+			version, commit, err := pico.QueryVersion()
+			switch {
+			case err != nil:
+				lastErr = fmt.Errorf("firmware version attempt %d/%d: %w", attempt, attempts, err)
+			case version != expected:
+				lastErr = fmt.Errorf("firmware version attempt %d/%d: got %q, expected %q", attempt, attempts, version, expected)
+			default:
+				return version, commit, nil
+			}
+		}
+		if attempt < attempts {
+			time.Sleep(interval)
+		}
+	}
+	return "", "", lastErr
 }
 
 // picoStateResyncer is the subset of *phone.SerialPort that the Pico
@@ -1393,19 +1471,13 @@ func main() {
 	defer func() { _ = sp.Close() }()
 
 	// Post-reboot firmware version results. STATUS:READY (external SWD flash
-	// or power cycle) and our own auto-update flow both invoke
-	// requeryFirmware to retry QueryVersion (the Pico's UART command loop
-	// isn't quite awake yet at the instant the chip finishes booting). The
-	// goroutine sends the result on fwVersionCh so the main loop can update
-	// fwVersion/fwCommit without any shared-state synchronization.
+	// or power cycle) invokes requeryFirmware to retry QueryVersion. The update
+	// path uses verifyFirmware below so it can require a fresh PONG and exact
+	// target version before reporting success. Both paths publish through
+	// fwVersionCh so the main loop updates capabilities and restores Pico state.
 	//
-	// requeryInFlight dedupes overlapping calls. After an auto-update flash
-	// both afterFirmwareUpdated and the Pico's STATUS:READY message want to
-	// trigger a requery within the same second; the second call becomes a
-	// no-op and avoids a "channel full, dropping" warning. The flag clears
-	// when the goroutine returns, so a later genuine reboot starts fresh.
-	type fwVersionResult struct{ version, commit string }
-	fwVersionCh := make(chan fwVersionResult, 1)
+	// requeryInFlight dedupes overlapping STATUS:READY calls.
+	fwVersionCh := make(chan firmwareVersionResult, 1)
 	var requeryInFlight atomic.Bool
 	requeryFirmware := func() {
 		if !requeryInFlight.CompareAndSwap(false, true) {
@@ -1419,7 +1491,7 @@ func main() {
 				v, c, err := sp.QueryVersion()
 				if err == nil {
 					select {
-					case fwVersionCh <- fwVersionResult{version: v, commit: c}:
+					case fwVersionCh <- firmwareVersionResult{version: v, commit: c}:
 					default:
 						slog.Warn("pico: version result channel full, dropping")
 					}
@@ -1432,6 +1504,15 @@ func main() {
 			}
 			slog.Warn("pico: version query after reboot gave up")
 		}()
+	}
+	verifyFirmware := func(expected string) error {
+		const attempts = 5
+		version, commit, err := awaitPicoFirmware(sp, expected, attempts, 500*time.Millisecond)
+		if err != nil {
+			return err
+		}
+		publishLatestFirmwareVersion(fwVersionCh, firmwareVersionResult{version: version, commit: commit})
+		return nil
 	}
 
 	// POST: verify Pico is alive
@@ -1968,7 +2049,7 @@ func main() {
 		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
 		fwVer, _ := cb.getFirmwareVersion()
 		go func() {
-			_ = runTargetedUpdate(effectiveServerURL, version.Version, fwVer, "", "", flashCapable.Load(), nil, requeryFirmware)
+			_ = runTargetedUpdate(effectiveServerURL, version.Version, fwVer, "", "", flashCapable.Load(), nil, verifyFirmware)
 		}()
 	}
 
@@ -1978,7 +2059,7 @@ func main() {
 	cb.autoUpdateEnabled.Store(cfg.AutoUpdate)
 	cb.triggerAutoUpdate = func() {
 		fwVer, _ := cb.getFirmwareVersion()
-		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
+		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), verifyFirmware)
 	}
 	if cb.autoUpdateAllowed() {
 		slog.Info("auto-update: enabled, checking for updates on startup")
@@ -2170,7 +2251,7 @@ func main() {
 	cb.deviceID = deviceID
 	cb.serverURL = effectiveServerURL
 	cb.flashCapable = &flashCapable
-	cb.requeryFirmware = requeryFirmware
+	cb.verifyFirmware = verifyFirmware
 	cb.pairingRefresh = pairingRefresh
 
 	// pairingAnnouncementCancel cancels the in-flight pairing-announcement

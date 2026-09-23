@@ -43,10 +43,26 @@ echo "=== Digits Pico Flash ==="
 echo "Firmware: $ELF"
 echo "SWD config: $SWD_CFG"
 
+SERVICE_STOPPED=0
+cleanup() {
+    status=$?
+    trap - EXIT
+    if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ] && [ "$SERVICE_STOPPED" = "1" ]; then
+        echo "Starting digitsd..."
+        if ! sudo systemctl start digitsd.service; then
+            echo "ERROR: failed to restart digitsd.service" >&2
+            status=1
+        fi
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+
 # 1. Stop digitsd to release serial port (skip if called from digitsd itself)
 if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     echo "Stopping digitsd..."
     sudo systemctl stop digitsd.service 2>/dev/null || true
+    SERVICE_STOPPED=1
     sleep 1
 fi
 
@@ -96,10 +112,6 @@ if ! flash_attempt; then
     sleep 1
     if ! flash_attempt; then
         echo "ERROR: OpenOCD flash failed even after RESCUE." >&2
-        echo "Restarting digitsd anyway..."
-        if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
-            sudo systemctl start digitsd.service
-        fi
         exit 1
     fi
 fi
@@ -140,17 +152,12 @@ if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     stty -F "$SERIAL_DEV" "$BAUD" raw -echo
     printf "PING\r\n" > "$SERIAL_DEV"
     PONG=$(timeout 3 head -c 10 < "$SERIAL_DEV" || echo "TIMEOUT")
-    if echo "$PONG" | grep -q "PONG"; then
+    if printf '%s\n' "$PONG" | tr -d '\r' | grep -qx "PONG"; then
         echo "VERIFY: PASS"
     else
-        echo "VERIFY: FAIL, got: $PONG"
+        echo "VERIFY: FAIL, got: $PONG" >&2
+        exit 1
     fi
-fi
-
-# 5. Restart digitsd (skip if called from digitsd; systemd will restart it)
-if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
-    echo "Starting digitsd..."
-    sudo systemctl start digitsd.service
 fi
 
 echo "=== Flash complete ==="

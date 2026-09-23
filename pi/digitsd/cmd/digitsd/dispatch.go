@@ -259,7 +259,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 		fwVersion, _ := d.getFirmwareVersion()
 		go func() {
 			_ = runTargetedUpdate(d.serverURL, version.Version, fwVersion,
-				msg.TargetPiVersion, msg.TargetFWVersion, d.flashCapable.Load(), statusReporter, d.requeryFirmware)
+				msg.TargetPiVersion, msg.TargetFWVersion, d.flashCapable.Load(), statusReporter, d.verifyFirmware)
 		}()
 
 	case sigclient.TypeReleaseAvailable:

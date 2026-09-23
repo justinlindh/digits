@@ -217,6 +217,46 @@ func TestReadLoopResponseRouting(t *testing.T) {
 	}
 }
 
+func TestQueryVersionIgnoresStaleResponseAndPreservesEvents(t *testing.T) {
+	p := newFakePort()
+	pf := &portFactory{results: []openResult{{port: p}}}
+	sp := newTestSerialPort(t, pf)
+
+	// A response that arrived before VERSION was sent must not be cached for
+	// the later command.
+	p.feed("VERSION:1.8.0:old\r\n")
+	if got := recvEvent(t, sp, time.Second); got != "VERSION:1.8.0:old" {
+		t.Fatalf("stale response event = %q", got)
+	}
+
+	type result struct {
+		version string
+		commit  string
+		err     error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		version, commit, err := sp.QueryVersion()
+		resultCh <- result{version: version, commit: commit, err: err}
+	}()
+	waitFor(t, func() bool { return sp.respCh.Load() != nil }, time.Second, "VERSION waiter never registered")
+
+	// Telemetry remains deliverable while the synchronous handshake is active.
+	p.feed("STATUS:READY\r\n")
+	if got := recvEvent(t, sp, time.Second); got != "STATUS:READY" {
+		t.Fatalf("event during version query = %q, want STATUS:READY", got)
+	}
+	p.feed("VERSION:1.9.0:new\r\n")
+
+	got := <-resultCh
+	if got.err != nil {
+		t.Fatalf("QueryVersion() error: %v", got.err)
+	}
+	if got.version != "1.9.0" || got.commit != "new" {
+		t.Fatalf("QueryVersion() = %q/%q, want 1.9.0/new", got.version, got.commit)
+	}
+}
+
 func TestReadLoopDroppedLineCount(t *testing.T) {
 	p := newFakePort()
 	pf := &portFactory{results: []openResult{{port: p}}}
