@@ -95,19 +95,18 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 // device count, and the calls in the window its lines placed and received.
 // Each call counts once: placed when a household line is the caller, else
 // received. That matches the direction the household's own dashboard shows,
-// so a call between two of its own lines is placed only. Both are always
-// zero for a household that has call history turned off: the operator view
-// is a subset of what the household chose to keep for itself, never more.
+// so a call between two of its own lines is placed only. The counts do not
+// depend on the household's call history setting: that setting controls the
+// household's own history view, and the rows exist either way.
 type Household struct {
-	ID                 string
-	Name               string
-	CreatedAt          time.Time
-	Members            []string
-	Lines              []string
-	PairedDevices      int
-	CallHistoryEnabled bool
-	CallsPlaced        int
-	CallsReceived      int
+	ID            string
+	Name          string
+	CreatedAt     time.Time
+	Members       []string
+	Lines         []string
+	PairedDevices int
+	CallsPlaced   int
+	CallsReceived int
 }
 
 // Households lists every household, oldest first. since bounds the per
@@ -123,7 +122,6 @@ func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, e
 			hl.nums,
 			(SELECT COUNT(*) FROM devices d JOIN lines l ON l.id = d.line_id
 				WHERE l.household_id = h.id AND d.paired_at IS NOT NULL),
-			h.call_history_enabled,
 			cc.placed, cc.received
 		FROM households h
 		CROSS JOIN LATERAL (
@@ -134,7 +132,7 @@ func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, e
 			SELECT COUNT(*) FILTER (WHERE c.caller = ANY(hl.nums)) AS placed,
 				COUNT(*) FILTER (WHERE NOT c.caller = ANY(hl.nums)) AS received
 			FROM calls c
-			WHERE h.call_history_enabled AND c.started_at >= $1
+			WHERE c.started_at >= $1
 				AND (c.caller = ANY(hl.nums) OR c.callee = ANY(hl.nums))
 		) cc
 		ORDER BY h.created_at, h.name`,
@@ -148,7 +146,7 @@ func (s *Store) Households(ctx context.Context, since time.Time) ([]Household, e
 	var out []Household
 	for rows.Next() {
 		var h Household
-		if err := rows.Scan(&h.ID, &h.Name, &h.CreatedAt, pq.Array(&h.Members), pq.Array(&h.Lines), &h.PairedDevices, &h.CallHistoryEnabled, &h.CallsPlaced, &h.CallsReceived); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.CreatedAt, pq.Array(&h.Members), pq.Array(&h.Lines), &h.PairedDevices, &h.CallsPlaced, &h.CallsReceived); err != nil {
 			return nil, fmt.Errorf("admin households scan: %w", err)
 		}
 		out = append(out, h)
