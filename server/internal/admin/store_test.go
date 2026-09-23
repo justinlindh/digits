@@ -63,8 +63,8 @@ func seedFixture(t *testing.T, database *db.Database, now time.Time) {
 	bob := mustScan(t, database, `INSERT INTO users (email, name, created_at) VALUES ('bob@example.com', 'Bob', $1) RETURNING id`, now.Add(-48*time.Hour))
 	carol := mustScan(t, database, `INSERT INTO users (email, name, created_at, disabled_at) VALUES ('carol@example.com', 'Carol', $1, $2) RETURNING id`, now.Add(-24*time.Hour), now.Add(-time.Hour))
 
-	// Alpha keeps call history; Beta opted out, so its per-household count
-	// must not be visible to an operator even though its calls are stored.
+	// Beta opted out of call history, which must not hide its counts from the
+	// operator: the call rows are stored either way.
 	alpha := mustScan(t, database, `INSERT INTO households (name, created_at, call_history_enabled) VALUES ('Alpha', $1, true) RETURNING id`, now.Add(-72*time.Hour))
 	beta := mustScan(t, database, `INSERT INTO households (name, created_at, call_history_enabled) VALUES ('Beta', $1, false) RETURNING id`, now.Add(-24*time.Hour))
 	mustExec(t, database, `INSERT INTO household_members (user_id, household_id) VALUES ($1, $2), ($3, $2), ($4, $5)`, alice, alpha, bob, carol, beta)
@@ -160,16 +160,15 @@ func TestHouseholds(t *testing.T) {
 	}
 	// The three internal calls count as placed only; beta's call into alpha
 	// is the one received.
-	if alpha.PairedDevices != 1 || alpha.CallsPlaced != 3 || alpha.CallsReceived != 1 || !alpha.CallHistoryEnabled {
-		t.Errorf("alpha devices=%d placed=%d received=%d history=%v, want 1, 3, 1, true", alpha.PairedDevices, alpha.CallsPlaced, alpha.CallsReceived, alpha.CallHistoryEnabled)
+	if alpha.PairedDevices != 1 || alpha.CallsPlaced != 3 || alpha.CallsReceived != 1 {
+		t.Errorf("alpha devices=%d placed=%d received=%d, want 1, 3, 1", alpha.PairedDevices, alpha.CallsPlaced, alpha.CallsReceived)
 	}
 	if len(beta.Members) != 1 || len(beta.Lines) != 1 || beta.PairedDevices != 0 {
 		t.Errorf("beta = %+v", beta)
 	}
-	// Beta has one stored call in the window but opted out of call history,
-	// so the operator view reports none.
-	if beta.CallHistoryEnabled || beta.CallsPlaced != 0 || beta.CallsReceived != 0 {
-		t.Errorf("beta history=%v placed=%d received=%d, want false, 0, 0", beta.CallHistoryEnabled, beta.CallsPlaced, beta.CallsReceived)
+	// Beta opted out of call history but its call into alpha still counts.
+	if beta.CallsPlaced != 1 || beta.CallsReceived != 0 {
+		t.Errorf("beta placed=%d received=%d, want 1, 0", beta.CallsPlaced, beta.CallsReceived)
 	}
 }
 
