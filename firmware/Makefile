@@ -1,4 +1,6 @@
 BUILDER_IMG = digits-firmware-builder
+DOCKER_BUILD_ARGS ?=
+DOCKER_RUN_ARGS ?=
 REPO_ROOT   = $(shell git rev-parse --show-toplevel)
 
 # Docker and local builds use separate CMake build directories so that
@@ -16,10 +18,10 @@ DIGITS_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown
 .PHONY: build build-local builder test clean
 
 builder:
-	@docker build -q -t $(BUILDER_IMG) -f Dockerfile.builder .
+	@docker build $(DOCKER_BUILD_ARGS) -q -t $(BUILDER_IMG) -f Dockerfile.builder .
 
 build: builder
-	docker run --rm \
+	docker run --rm $(DOCKER_RUN_ARGS) \
 		--user $(shell id -u):$(shell id -g) \
 		-v $(REPO_ROOT):/src -w /src/firmware \
 		-e DIGITS_VERSION=$(DIGITS_VERSION) \
