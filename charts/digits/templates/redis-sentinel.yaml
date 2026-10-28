@@ -116,7 +116,10 @@ spec:
               # replicate from redis-1 rather than starting as a standalone master.
               SENTINEL_SVC="{{ include "digits.fullname" . }}-redis-sentinel.{{ .Release.Namespace }}.svc.cluster.local"
               MASTER=$(redis-cli -h "$SENTINEL_SVC" -p 26379 SENTINEL get-master-addr-by-name {{ .Values.redis.sentinelMasterName }} 2>/dev/null | head -1)
-              MY_FQDN="{{ include "digits.fullname" . }}-$(hostname | awk -F- '{print $NF}').{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              MY_FQDN="$(hostname).{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              # Announce the stable DNS name instead of the pod IP, so the master
+              # address sentinels hand to clients survives pod restarts.
+              echo "replica-announce-ip $MY_FQDN" >> /tmp/redis.conf
               if [ -n "$MASTER" ] && [ "$MASTER" != "$MY_FQDN" ]; then
                 MASTER_PORT=$(redis-cli -h "$SENTINEL_SVC" -p 26379 SENTINEL get-master-addr-by-name {{ .Values.redis.sentinelMasterName }} 2>/dev/null | tail -1)
                 echo "replicaof $MASTER ${MASTER_PORT:-6379}" >> /tmp/redis.conf
@@ -162,6 +165,19 @@ spec:
               if [ ! -f /sentinel-state/sentinel.conf ]; then
                 cp /etc/redis/sentinel.conf /sentinel-state/sentinel.conf
               fi
+              # Announce the stable DNS name instead of the pod IP. Clients add
+              # every sentinel listed by SENTINEL SENTINELS to their dial list,
+              # and a pod IP there goes dead on the next restart. Re-applied each
+              # boot because the persisted state file outlives the ConfigMap, and
+              # placed first because a hostname monitor line needs
+              # resolve-hostnames parsed before it.
+              {
+                echo "sentinel resolve-hostnames yes"
+                echo "sentinel announce-hostnames yes"
+                echo "sentinel announce-ip $(hostname).{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local"
+                grep -v -E '^sentinel (announce-ip|resolve-hostnames|announce-hostnames) ' /sentinel-state/sentinel.conf
+              } > /sentinel-state/sentinel.conf.new
+              mv /sentinel-state/sentinel.conf.new /sentinel-state/sentinel.conf
               exec redis-sentinel /sentinel-state/sentinel.conf
           volumeMounts:
             - name: config
