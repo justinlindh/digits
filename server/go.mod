@@ -12,7 +12,7 @@ require (
 	github.com/XSAM/otelsql v0.44.0
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/google/uuid v1.6.0
-	github.com/grafana/pyroscope-go v1.4.2
+	github.com/grafana/pyroscope-go v1.4.3
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/yuin/goldmark v1.8.6
 	go.opentelemetry.io/otel v1.47.0
