@@ -11,6 +11,11 @@ spec:
   imageName: {{ .Values.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
   enableSuperuserAccess: {{ .Values.cnpg.enableSuperuserAccess }}
+  {{- with .Values.cnpg.userdb.tolerations }}
+  affinity:
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
   storage:
     size: {{ .Values.cnpg.userdb.size }}
     {{- if .Values.cnpg.userdb.storageClass }}

@@ -56,6 +56,10 @@ cnpg:
     customQueriesConfigMap: []
     postInitSQL: []
     postInitApplicationSQL: []
+    # Tolerations for the database pods. Tolerating the unreachable and
+    # not-ready NoExecute taints keeps an instance from being evicted off a
+    # dead node, where it would sit Terminating until the node returns.
+    tolerations: []
   backup:
     enabled: false
     retentionPolicy: "14d"

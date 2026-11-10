@@ -61,6 +61,9 @@ jobs:
             --set ingress.signald.host=app.example.com \
             --set cnpg.enabled=true \
             --set cnpg.userdb.storageClass=default \
+            --set 'cnpg.userdb.tolerations[0].key=node.kubernetes.io/unreachable' \
+            --set 'cnpg.userdb.tolerations[0].operator=Exists' \
+            --set 'cnpg.userdb.tolerations[0].effect=NoExecute' \
             --set cnpg.backup.enabled=true \
             --set cnpg.backup.destinationPath=s3://backups \
             --set cnpg.backup.endpointURL=http://minio:9000 \
