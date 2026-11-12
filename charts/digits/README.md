@@ -58,6 +58,8 @@ cnpg:
 
 When enabled, the chart creates a CNPG Cluster CR. The operator generates a Secret (`<release>-userdb-app`) containing the connection URI that the deployment consumes automatically.
 
+`cnpg.primaryUpdateMethod` defaults to `switchover`: on an image or configuration change the operator updates the replicas, then promotes one, so the database is unavailable for seconds rather than for the primary's whole shutdown. Set it to `restart` to keep the primary in place.
+
 ### Ingress
 
 ```yaml
@@ -134,6 +136,8 @@ signald:
   image:
     tag: v1.57.0
 ```
+
+The bundled Redis StatefulSet takes its images from `redis.image` and `redis.exporterImage`, both exact tags.
 
 ## Full values reference
 

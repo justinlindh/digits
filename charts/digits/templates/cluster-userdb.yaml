@@ -10,6 +10,7 @@ spec:
   instances: {{ .Values.cnpg.userdb.instances }}
   imageName: {{ .Values.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: {{ .Values.cnpg.primaryUpdateMethod }}
   enableSuperuserAccess: {{ .Values.cnpg.enableSuperuserAccess }}
   storage:
     size: {{ .Values.cnpg.userdb.size }}

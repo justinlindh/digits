@@ -31,6 +31,10 @@ redis:
   enabled: false
   replicas: 3
   sentinelMasterName: digits
+  # Exact tags: a floating tag such as 7-alpine stays on whatever build a node
+  # first pulled, since the pods pull only when the image is missing.
+  image: redis:7.4.12-alpine
+  exporterImage: oliver006/redis_exporter:v1.97.0-alpine
   # Storage class for the sentinel-state PVC. Empty string uses the cluster default.
   sentinelStorageClass: ""
   resources:
@@ -42,7 +46,12 @@ redis:
 
 cnpg:
   enabled: false
-  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.15
+  # How the operator applies an image or config change to the primary.
+  # switchover promotes a replica that already runs the change; restart restarts
+  # the primary in place, and the database takes no connections until every
+  # client has disconnected or smartShutdownTimeout passes.
+  primaryUpdateMethod: switchover
   enableSuperuserAccess: false
   userdb:
     instances: 2

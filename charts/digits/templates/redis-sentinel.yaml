@@ -96,7 +96,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: redis
-          image: redis:7-alpine
+          image: {{ .Values.redis.image }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -147,7 +147,7 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
         - name: sentinel
-          image: redis:7-alpine
+          image: {{ .Values.redis.image }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -193,7 +193,7 @@ spec:
             limits:
               memory: 64Mi
         - name: exporter
-          image: oliver006/redis_exporter:v1.67.0-alpine
+          image: {{ .Values.redis.exporterImage }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
