@@ -30,6 +30,13 @@ spec:
         {{- toYaml .Values.cnpg.userdb.postInitApplicationSQL | nindent 8 }}
       {{- end }}
   {{- if .Values.cnpg.backup.enabled }}
+  {{- if eq .Values.cnpg.backup.method "plugin" }}
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ include "digits.fullname" . }}-userdb
+  {{- else }}
   backup:
     barmanObjectStore:
       destinationPath: {{ .Values.cnpg.backup.destinationPath }}/{{ include "digits.fullname" . }}-userdb
@@ -46,6 +53,7 @@ spec:
       data:
         compression: gzip
     retentionPolicy: {{ .Values.cnpg.backup.retentionPolicy | quote }}
+  {{- end }}
   {{- end }}
   {{- if or .Values.cnpg.userdb.sharedPreloadLibraries .Values.cnpg.userdb.parameters }}
   postgresql:

@@ -67,12 +67,22 @@ cnpg:
     postInitApplicationSQL: []
   backup:
     enabled: false
+    # plugin: the Barman Cloud plugin (must be installed next to the CNPG
+    # operator) archives WAL and takes base backups through an ObjectStore.
+    # barmanObjectStore: the operator's built-in backup, removed in
+    # CloudNativePG 1.31.
+    method: plugin
     retentionPolicy: "14d"
     destinationPath: ""
     endpointURL: ""
     s3CredentialsSecret: ""
     s3AccessKeyIDKey: ACCESS_KEY_ID
     s3SecretAccessKeyKey: ACCESS_SECRET_KEY
+    # Resources for the sidecar the plugin adds to each instance pod.
+    sidecarResources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
 
 observability:
   enabled: false

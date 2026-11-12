@@ -1,0 +1,33 @@
+{{- if and .Values.cnpg.enabled .Values.cnpg.backup.enabled (eq .Values.cnpg.backup.method "plugin") }}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ include "digits.fullname" . }}-userdb
+  labels:
+    {{- include "digits.labels" . | nindent 4 }}
+  annotations:
+    # Argo CD creates the ObjectStore before the Cluster that references it;
+    # a Cluster pointing at a missing ObjectStore cannot archive WAL.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  retentionPolicy: {{ .Values.cnpg.backup.retentionPolicy | quote }}
+  configuration:
+    destinationPath: {{ .Values.cnpg.backup.destinationPath }}/{{ include "digits.fullname" . }}-userdb
+    endpointURL: {{ .Values.cnpg.backup.endpointURL }}
+    s3Credentials:
+      accessKeyId:
+        name: {{ .Values.cnpg.backup.s3CredentialsSecret }}
+        key: {{ .Values.cnpg.backup.s3AccessKeyIDKey }}
+      secretAccessKey:
+        name: {{ .Values.cnpg.backup.s3CredentialsSecret }}
+        key: {{ .Values.cnpg.backup.s3SecretAccessKeyKey }}
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  {{- with .Values.cnpg.backup.sidecarResources }}
+  instanceSidecarConfiguration:
+    resources:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
+{{- end }}

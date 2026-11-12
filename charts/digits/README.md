@@ -58,6 +58,8 @@ cnpg:
 
 When enabled, the chart creates a CNPG Cluster CR. The operator generates a Secret (`<release>-userdb-app`) containing the connection URI that the deployment consumes automatically.
 
+With `cnpg.backup.enabled: true`, backups go through the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/) by default (`cnpg.backup.method: plugin`), which must be installed in the operator's namespace: the chart creates an `ObjectStore` and registers the plugin as the Cluster's WAL archiver. Pair it with a `ScheduledBackup` that uses `method: plugin`. For an operator older than 1.31 without the plugin, set `cnpg.backup.method: barmanObjectStore` to use the built-in backup instead.
+
 `cnpg.primaryUpdateMethod` defaults to `switchover`: on an image or configuration change the operator updates the replicas, then promotes one, so the database is unavailable for seconds rather than for the primary's whole shutdown. Set it to `restart` to keep the primary in place.
 
 ### Ingress

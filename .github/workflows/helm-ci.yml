@@ -77,5 +77,5 @@ jobs:
       # typo'd core kind, or an unreachable schema host, fails the step instead of being silently passed over.
       - name: Validate rendered manifests (kubeconform)
         run: |
-          kubeconform -strict -summary -skip Cluster,PodMonitor,ServiceMonitor \
+          kubeconform -strict -summary -skip Cluster,ObjectStore,PodMonitor,ServiceMonitor \
             "$RUNNER_TEMP/rendered-defaults.yaml" "$RUNNER_TEMP/rendered-all.yaml"
