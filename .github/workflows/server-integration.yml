@@ -20,20 +20,6 @@ jobs:
     # RUNNER_LABEL.
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNNER_LABEL || 'ubuntu-latest' }}
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: digits
-          POSTGRES_PASSWORD: digits
-          POSTGRES_DB: digits_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U digits"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - uses: actions/checkout@v7
@@ -43,6 +29,9 @@ jobs:
           go-version: '1.26.1'
           # Self-hosted runners carry a persistent local Go cache, so actions/cache traffic is pure waste; the ubuntu-latest fallback (forks, homelab pool disabled) forgoes Go caching by design.
           cache: false
+
+      - name: Start Postgres
+        run: server/scripts/ci-postgres.sh digits digits digits_test
 
       - name: Integration tests
         working-directory: server

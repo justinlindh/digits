@@ -1,7 +1,8 @@
 name: Firmware CI
 
 # Host-side unit tests run for firmware changes. Pull requests also compile and
-# link the production Pico target with the repository's pinned Docker builder.
+# link the production Pico target with the toolchain pinned in
+# firmware/Dockerfile.builder (see scripts/fw-ci-build.sh).
 
 on:
   push:
@@ -10,12 +11,14 @@ on:
       - 'firmware/**'
       - 'Makefile'
       - 'scripts/build.sh'
+      - 'scripts/fw-ci-build.sh'
       - '.github/workflows/fw-ci.yml'
   pull_request:
     paths:
       - 'firmware/**'
       - 'Makefile'
       - 'scripts/build.sh'
+      - 'scripts/fw-ci-build.sh'
       - '.github/workflows/fw-ci.yml'
 
 permissions:
@@ -54,7 +57,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Compile and link production Pico firmware
-        run: |
-          make firmware
-          test -s firmware/build/docker/digits.elf
-          test -s firmware/build/docker/digits.uf2
+        run: scripts/fw-ci-build.sh
