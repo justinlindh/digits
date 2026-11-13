@@ -8,6 +8,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "fw-ci.yml"
 DOCKERFILE = REPO_ROOT / "firmware" / "Dockerfile.builder"
+BUILD_SCRIPT = REPO_ROOT / "scripts" / "fw-ci-build.sh"
 
 
 class FirmwareCIWorkflowTest(unittest.TestCase):
@@ -15,13 +16,25 @@ class FirmwareCIWorkflowTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
         cls.dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+        cls.build_script = BUILD_SCRIPT.read_text(encoding="utf-8")
 
     def test_pull_requests_compile_and_link_production_firmware(self) -> None:
         self.assertIn("production-build:", self.workflow)
         self.assertIn("github.event_name == 'pull_request'", self.workflow)
-        self.assertIn("make firmware", self.workflow)
-        self.assertIn("test -s firmware/build/docker/digits.elf", self.workflow)
-        self.assertIn("test -s firmware/build/docker/digits.uf2", self.workflow)
+        self.assertIn("run: scripts/fw-ci-build.sh", self.workflow)
+        self.assertIn("make firmware-local", self.build_script)
+        self.assertIn("make firmware\n", self.build_script)
+        self.assertIn('test -s "$out/digits.elf"', self.build_script)
+        self.assertIn('test -s "$out/digits.uf2"', self.build_script)
+
+    def test_host_build_checks_every_builder_pin(self) -> None:
+        for check in (
+            "libstdc++-arm-none-eabi-newlib",
+            "pin ARM_GCC_VERSION",
+            "pin PICO_SDK_COMMIT",
+        ):
+            with self.subTest(check=check):
+                self.assertIn(check, self.build_script)
 
     def test_production_build_keeps_fork_runner_isolation(self) -> None:
         runner_selection = (
@@ -31,7 +44,12 @@ class FirmwareCIWorkflowTest(unittest.TestCase):
         self.assertGreaterEqual(self.workflow.count(runner_selection), 2)
 
     def test_build_support_changes_trigger_firmware_ci(self) -> None:
-        for path in ("firmware/**", "Makefile", "scripts/build.sh"):
+        for path in (
+            "firmware/**",
+            "Makefile",
+            "scripts/build.sh",
+            "scripts/fw-ci-build.sh",
+        ):
             with self.subTest(path=path):
                 self.assertGreaterEqual(self.workflow.count(f"'{path}'"), 2)
 

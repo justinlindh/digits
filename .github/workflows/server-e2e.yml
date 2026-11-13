@@ -6,6 +6,7 @@ on:
       - 'server/internal/web/**'
       - 'server/internal/admin/**'
       - 'server/e2e/**'
+      - 'server/scripts/ci-postgres.sh'
       - '.github/workflows/server-e2e.yml'
   workflow_dispatch:
 
@@ -22,20 +23,6 @@ jobs:
     # self-hosted pool; same-repo PRs and dispatches follow RUNNER_LABEL.
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 25
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: digits
-          POSTGRES_PASSWORD: digits
-          POSTGRES_DB: digits_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v7
@@ -43,12 +30,15 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: '1.26.1'
-          # Self-hosted runners carry a persistent local Go cache, so actions/cache traffic is pure waste; the ubuntu-latest fallback (forks, homelab pool disabled) forgoes Go caching by design.
+          # Go caches never go through actions/cache. Self-hosted runners rely on whatever local cache the runner set mounts; the ubuntu-latest fallback builds cold.
           cache: false
 
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+
+      - name: Start Postgres
+        run: server/scripts/ci-postgres.sh digits digits digits_test
 
       - name: Build server
         working-directory: server
@@ -81,7 +71,12 @@ jobs:
         working-directory: server/e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          # Runners without sudo carry Chromium's system libraries in the image.
+          if sudo -n true 2>/dev/null; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install chromium
+          fi
 
       - name: Run tests
         working-directory: server/e2e
