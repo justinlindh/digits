@@ -71,7 +71,12 @@ jobs:
         working-directory: server/e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          # Runners without sudo carry Chromium's system libraries in the image.
+          if sudo -n true 2>/dev/null; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install chromium
+          fi
 
       - name: Run tests
         working-directory: server/e2e
